@@ -8,15 +8,15 @@ captures = struct( ...
     "Normal_7_5", struct("name", "Normal_7_5", "offset", 31.625), ...
     "Normal_10", struct("name", "Normal_10", "offset", 32.625), ...
     "Normal_12_5", struct("name", "Normal_12_5", "offset", 30.895), ...
-    "Normal_15", struct("name", "Normal_15", "offset", 31), ...
-    "Horizontal_7_5", struct("name", "Horizontal_7_5", "offset", 31), ...
+    "Normal_15", struct("name", "Normal_15", "offset", 31.045), ...
+    "Horizontal_7_5", struct("name", "Horizontal_7_5", "offset", 31.625), ...
     "Horizontal_10", struct("name", "Horizontal_10", "offset", 31), ...
     "Vertical_12_5", struct("name", "Vertical_12_5", "offset", 31), ...
     "Vertical_15", struct("name", "Vertical_15", "offset", 31) ...
 );
 
 % Select a capture to work with.
-capture = captures.Normal_12_5;
+capture = captures.Horizontal_7_5;
 
 % Sensor to use
 % 1: trunk front
@@ -57,7 +57,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 78);
+imuStartTime = max(lookaround/Fs, 73);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 
@@ -71,7 +71,8 @@ videoFramePeriod = 1/v.FrameRate;
 % Time vector for the video frames
 vidTvec = linspace(0, v.NumFrames*videoFramePeriod, v.NumFrames)';
 
-
+% Create time and sample vectors for the video and IMU data, based one the
+% sampling rate.
 Nvid = floor(linspace(1, v.NumFrames, v.Duration*Fs)');
 Nimu = floor(linspace(1, length(imuSamples), imuDuration*Fs)');
 Tvid = linspace(0, v.Duration, v.Duration*Fs)';
@@ -79,9 +80,10 @@ Timu = linspace(0, imuDuration, imuDuration*Fs)';
 vidVec = [Nvid, Tvid];
 imuVec = [Nimu, Timu];
 
+% Compute the data IDs for the Y axes of the gyro and accelerometer.
 gyroY = sprintf(gyroID, sensorID, 'Y');
 accelY = sprintf(accelID, sensorID, 'Y');
-accelX = sprintf(accelID, sensorID, 'X');
+% accelX = sprintf(accelID, sensorID, 'X');
 
 switch dataToUse
     case 2
@@ -91,22 +93,26 @@ switch dataToUse
     otherwise
         dataID = accelID;
         plotTitle = 'Accelerometer';
-        lim = 4;
+        lim = 4.5;
 end
 
 fieldX = sprintf(dataID, sensorID, 'X');
 fieldY = sprintf(dataID, sensorID, 'Y');
 fieldZ = sprintf(dataID, sensorID, 'Z');
 
-frame = readFrame(v);
-% Try to align the video to the start of the IMU data...
+% frame = readFrame(v);
+% Align the video with the start of the IMU data...
+% Read video frames until the video current time is greater than or equal to the
+% offset.
 while v.CurrentTime < vidStartTime
     frame = readFrame(v);
 end
+% Align video sample index with the video current time.
 vidNOffset = 0;
 while Tvid(vidNOffset + 1) < v.CurrentTime
     vidNOffset = vidNOffset + 1;
 end
+% Align the IMU sample index with the IMU start time.
 imuNOffset = 0;
 while Timu(imuNOffset + 1) < imuStartTime
     imuNOffset = imuNOffset + 1;
@@ -115,9 +121,11 @@ end
 % Axis... only useful if doing a general plot. Maybe remove this.
 axisToUse = 'X';
 
+% Create a figure for the plot of the video, plus gyro & accelerometer Y axes.
 figure('Position', [100, 100, 1500, 640]);
 
 for n=1:length(Nimu)-lookaround
+    % (Maybe) advance the video frame
     while Tvid(n + vidNOffset) > v.CurrentTime
         frame = readFrame(v);
     end
@@ -200,7 +208,6 @@ for n=1:length(Nimu)-lookaround
 % %         view(90, 0);
 %         view(45 + n/10, 30);
     
-
     drawnow;
 end
 
