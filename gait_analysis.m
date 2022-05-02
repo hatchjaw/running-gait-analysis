@@ -10,19 +10,19 @@ captures = struct( ...
     "Normal_12_5", struct("name", "Normal_12_5", "offset", 30.895), ...
     "Normal_15", struct("name", "Normal_15", "offset", 31.045), ...
     "Horizontal_7_5", struct("name", "Horizontal_7_5", "offset", 31.625), ...
-    "Horizontal_10", struct("name", "Horizontal_10", "offset", 31), ...
-    "Vertical_12_5", struct("name", "Vertical_12_5", "offset", 31), ...
-    "Vertical_15", struct("name", "Vertical_15", "offset", 31) ...
+    "Horizontal_10", struct("name", "Horizontal_10", "offset", 30.575), ...
+    "Vertical_12_5", struct("name", "Vertical_12_5", "offset", 30.475), ...
+    "Vertical_15", struct("name", "Vertical_15", "offset", 29.6) ...
 );
 
 % Select a capture to work with.
-capture = captures.Horizontal_7_5;
+capture = captures.Vertical_15;
 
 % Sensor to use
 % 1: trunk front
 % 2: shank left
 % 3: shank right (useful for syncing data and video)
-sensorID = 3;
+sensorID = 1;
 % 1: accelerometer
 % 2: gyroscope
 dataToUse = 1;
@@ -57,7 +57,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 73);
+imuStartTime = max(lookaround/Fs, 2);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 
@@ -122,7 +122,7 @@ end
 axisToUse = 'X';
 
 % Create a figure for the plot of the video, plus gyro & accelerometer Y axes.
-figure('Position', [100, 100, 1500, 640]);
+figure('Position', [100, 100, 1500, 640], 'Name', capture.name);
 
 for n=1:length(Nimu)-lookaround
     % (Maybe) advance the video frame
