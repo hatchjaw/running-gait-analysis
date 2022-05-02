@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Vertical_15;
+capture = captures.Horizontal_10;
 
 % Sensor to use
 % 1: trunk front
@@ -77,28 +77,16 @@ Nvid = floor(linspace(1, v.NumFrames, v.Duration*Fs)');
 Nimu = floor(linspace(1, length(imuSamples), imuDuration*Fs)');
 Tvid = linspace(0, v.Duration, v.Duration*Fs)';
 Timu = linspace(0, imuDuration, imuDuration*Fs)';
-vidVec = [Nvid, Tvid];
-imuVec = [Nimu, Timu];
+% vidVec = [Nvid, Tvid];
+% imuVec = [Nimu, Timu];
 
 % Compute the data IDs for the Y axes of the gyro and accelerometer.
 gyroY = sprintf(gyroID, sensorID, 'Y');
 accelY = sprintf(accelID, sensorID, 'Y');
 % accelX = sprintf(accelID, sensorID, 'X');
 
-switch dataToUse
-    case 2
-        dataID = gyroID;
-        plotTitle = 'Gyroscope';
-        lim = 300;
-    otherwise
-        dataID = accelID;
-        plotTitle = 'Accelerometer';
-        lim = 4.5;
-end
-
-fieldX = sprintf(dataID, sensorID, 'X');
-fieldY = sprintf(dataID, sensorID, 'Y');
-fieldZ = sprintf(dataID, sensorID, 'Z');
+gyroLim = 250;
+accelLim = 5;
 
 % frame = readFrame(v);
 % Align the video with the start of the IMU data...
@@ -160,7 +148,7 @@ for n=1:length(Nimu)-lookaround
         hold off, ...
         grid on, ...
         title(sprintf("Gyro Y t=%f s", Timu(n + imuNOffset))), ...
-        ylim([-200, 200]), xlim(tRange);
+        ylim([-gyroLim, gyroLim]), xlim(tRange);
     
     % Plot a frame of accelerometer Y against time
     subplot(133), ...
@@ -179,7 +167,7 @@ for n=1:length(Nimu)-lookaround
         hold off, ...
         grid on, ...
         title(sprintf("Accel Y t=%f s", Timu(n + imuNOffset))), ...
-        ylim([-4, 4]), xlim(tRange);
+        ylim([-accelLim, accelLim]), xlim(tRange);
     
 
     
@@ -226,6 +214,10 @@ switch dataToUse
         plotTitle = 'Accelerometer';
         lim = 4;
 end
+
+fieldX = sprintf(dataID, sensorID, 'X');
+fieldY = sprintf(dataID, sensorID, 'Y');
+fieldZ = sprintf(dataID, sensorID, 'Z');
 
 switch plotMode
     case '2d'
