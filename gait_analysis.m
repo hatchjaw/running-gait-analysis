@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Normal_7_5;
+capture = captures.Vertical_15;
 
 % Sensor to use
 % 1: trunk front
@@ -49,6 +49,9 @@ close all;
 
 % Number of samples to plot around the current time.
 lookaround = 75;
+TOICInterval = .075;
+ICjerkThresh = -10;
+stancePhaseReversalWindow = [-1.5, -.5];
 
 % Sample rate
 Fs = imuSampleRate;
@@ -86,7 +89,7 @@ accelY = sprintf(accelID, sensorID, 'Y');
 % accelX = sprintf(accelID, sensorID, 'X');
 
 filtPass = 2.5/(imuSampleRate/2);
-filtStop = 45/(imuSampleRate/2);
+filtStop = 50/(imuSampleRate/2);
 filtAttenuation = 60;
 [filtOrder, filtCutoff] = buttord(filtPass, filtStop, 3, filtAttenuation);
 [filtB, filtA] = butter(filtOrder, filtCutoff);
@@ -118,9 +121,10 @@ axisToUse = 'X';
 
 % Derivative of accelerometer Y -- jerk
 jerk = zeros(2, 1);
-toeOffs = zeros(1, 4);
-initialContacts = zeros(1, 2);
+TOs = zeros(1, 4);
+ICs = zeros(1, 4);
 isStancePhaseReversal = false;
+isSwingPhaseReversal = false;
 gaitPhase = GaitEvent.Unknown;
 
 % Create a figure for the plot of the video, plus gyro & accelerometer Y axes.
@@ -146,22 +150,49 @@ for n=1:length(Nimu)-lookaround
     jerk(1) = (T.(accelY)(Nimu(imuCurrentN)) - T.(accelY)(Nimu(imuCurrentN-1))) / imuSamplePeriod;
     % Detect stance phase reversal
     if ~isStancePhaseReversal && sign(jerk(1)) == 1 && ...
-            T.(accelY)(Nimu(imuCurrentN)) < -.75 && T.(accelY)(Nimu(imuCurrentN)) > -1.5
+            T.(accelY)(Nimu(imuCurrentN)) < stancePhaseReversalWindow(2) && ...
+            T.(accelY)(Nimu(imuCurrentN)) > stancePhaseReversalWindow(1)
         isStancePhaseReversal = true;
     end
-    % Detect toe-off. Include sign of gyro for detecting L vs R foot.
-    if sign(jerk(1)) == -1 && sign(jerk(2)) == 1 && isStancePhaseReversal
-        toeOffs(end+1, :) = [Timu(imuCurrentN-1); ...
+    % Detect toe-off via change in jerk sign from pos to neg. 
+    % Include sign of gyro for detecting L vs R foot.
+    if sign(jerk(1)) == -1 && ...
+            sign(jerk(2)) == 1 && ...
+            isStancePhaseReversal
+        TOs(end+1, :) = [...
+            Timu(imuCurrentN-1); ...
             T.(accelY)(Nimu(imuCurrentN-1)); ...
             sign(T.(gyroY)(Nimu(imuCurrentN-1))); ...
-            Timu(imuCurrentN-1) - toeOffs(end, 1)];
+            Timu(imuCurrentN-1) - TOs(end, 1)...
+        ];
         isStancePhaseReversal = false;
+        isSwingPhaseReversal = true;
+    % Detect initial contact. First high negative jerk event an arbitrary
+    % interval after last toe off.
+    elseif jerk(1) < ICjerkThresh && ...
+            isSwingPhaseReversal && ...
+            T.(accelY)(Nimu(imuCurrentN)) < 0 && ...
+            Timu(imuCurrentN-1) - TOs(end, 1) > TOICInterval
+        ICs(end+1, :) = [...
+            Timu(imuCurrentN-1); ...
+            T.(accelY)(Nimu(imuCurrentN-1)); ...
+            -TOs(end, 3); ... % Opposite polarity/foot wrt to last toe off
+            Timu(imuCurrentN-1) - ICs(end, 1) ...
+        ];
+        isSwingPhaseReversal = false;
+%         isStancePhaseReversal = true;
     end
-    % Filter toe-offs outside range
-    if size(toeOffs, 1) > 5
-        toeOffs = toeOffs(toeOffs(:, 1) > Timu(imuCurrentN-5*lookaround, :), :);
-        if isempty(toeOffs)
-            toeOffs = zeros(1, 4);
+    % Filter toe-offs and initial contacts outside range
+    if size(TOs, 1) > 10
+        TOs = TOs(2:end, :);
+        if isempty(TOs)
+            TOs = zeros(1, 4);
+        end
+    end
+    if size(ICs, 1) > 10
+        ICs = ICs(2:end, :);
+        if isempty(ICs)
+            ICs = zeros(1, 4);
         end
     end
     
@@ -210,10 +241,6 @@ for n=1:length(Nimu)-lookaround
             T.(accelY)(Nimu(nRange)) ...
         ), ...
         hold on, ...
-%         plot( ...
-%             Timu(nRange), ...
-%             filter(.2, [1, -(1-.2)], filter(1-.5, [1, -(.5-1)], T.(accelY)(Nimu(nRange)))) ...
-%         ), ...
         plot(...
             Timu(imuCurrentN), ...
             T.(accelY)(Nimu(imuCurrentN)), ...
@@ -221,38 +248,13 @@ for n=1:length(Nimu)-lookaround
             'LineWidth', 2, ...
             'MarkerSize', 10 ...
         );
+    
     % Indicate toe-offs
-    if ~isempty(toeOffs)
-        scatter(toeOffs(:, 1), toeOffs(:, 2), 100, 'rx');
-        toeOffsToLabel = toeOffs(toeOffs(:, 1) > Timu(imuCurrentN-lookaround, :), :);
-        for t=1:size(toeOffsToLabel, 1)
-            textToDisplay = "Toe off";
-            if toeOffsToLabel(t, 3) == 1
-                textToDisplay = textToDisplay + " L";
-            else
-                textToDisplay = textToDisplay + " R";
-            end
-            text(toeOffsToLabel(t, 1) - .05, toeOffsToLabel(t, 2) + .2, textToDisplay);
-        end
-        
-        % Display inter-toe-off interval and balance
-        if size(toeOffs, 1) > 1
-            L = mean(toeOffs(toeOffs(:, 3) == 1, 4));
-            R = mean(toeOffs(toeOffs(:, 3) == -1, 4));
-            BL = L/(L+R);
-            BR = R/(L+R);
-            text(Timu(imuCurrentN - lookaround) + .1, ...
-                accelLim - 2, ...
-                { ...
-                    "$ITI = " + num2str(toeOffs(end, 4)) + "$", ...
-                    "$B_L = " + num2str(BL * 100) + "\%$", ...
-                    "$B_R = " + num2str(BR * 100) + "\%$"
-                }, ...
-                'interpreter', 'latex', 'FontSize', 16 ...
-            );
-        end
-    end
-        hold off, ...
+    indicateEvents(TOs, "Toe off", 'rx', "ITI", -.4, accelLim - 1, Timu, imuCurrentN, lookaround);
+    % Indicate ICs
+    indicateEvents(ICs, "Initial contact", 'g+', "ICI", .1, accelLim - 1, Timu, imuCurrentN, lookaround);
+    
+    hold off, ...
         grid on, ...
         title(sprintf("Accel Y t=%f s", Timu(imuCurrentN))), ...
         ylim([-accelLim, accelLim]), xlim(tRange);
