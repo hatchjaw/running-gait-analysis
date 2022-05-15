@@ -49,9 +49,13 @@ close all;
 
 % Number of samples to plot around the current time.
 lookaround = 75;
+% Minimum time interval between a toe-off and the following initial contact.
 TOICInterval = .075;
+% (Negative) jerk threshold for initial contact detection.
 ICjerkThresh = -15;
+% Acceleration threshold for initial contact detection.
 ICaccelThresh = -.25;
+% Acceleration range in which to detect a stance phase reversal.
 stancePhaseReversalWindow = [-1, -.5];
 
 % Sample rate
@@ -89,6 +93,7 @@ gyroY = sprintf(gyroID, sensorID, 'Y');
 accelY = sprintf(accelID, sensorID, 'Y');
 % accelX = sprintf(accelID, sensorID, 'X');
 
+% Gyroscope Y filter, for L/R detection.
 filtPass = 2.5/(imuSampleRate/2);
 filtStop = 50/(imuSampleRate/2);
 filtAttenuation = 60;
@@ -96,6 +101,7 @@ filtAttenuation = 60;
 [filtB, filtA] = butter(filtOrder, filtCutoff);
 gyroYFiltered = filter(filtB, filtA, T.(gyroY));
 
+% Y limits for plots
 gyroLim = 250;
 accelLim = 5;
 
@@ -122,12 +128,14 @@ axisToUse = 'X';
 
 % Derivative of accelerometer Y -- jerk
 jerk = zeros(2, 1);
+% Toe-offs
 TOs = zeros(1, 4);
+% Initial contacts
 ICs = zeros(1, 4);
+% Ground contact times
 GCTs = zeros(1, 2);
 isStancePhaseReversal = false;
 isSwingPhaseReversal = false;
-gaitPhase = GaitEvent.Unknown;
 
 % Create a figure for the plot of the video, plus gyro & accelerometer Y axes.
 figure('Position', [100, 100, 1500, 640], 'Name', capture.name);
@@ -168,6 +176,9 @@ for n=1:length(Nimu)-lookaround
             Timu(imuCurrentN-1) - TOs(end, 1)...
         ];
     
+        % Toe off marks the end of a ground contact, so register a ground
+        % contact time if possible. Should be greater than zero and (probably)
+        % less than three-quarters of a second.
         groundContactTime = TOs(end, 1) - ICs(end, 1);
         if groundContactTime > 0 && groundContactTime < .75
             GCTs(end+1, :) = [groundContactTime; TOs(end, 3)];
@@ -190,6 +201,7 @@ for n=1:length(Nimu)-lookaround
         isSwingPhaseReversal = false;
 %         isStancePhaseReversal = true;
     end
+    
     % Filter toe-offs and initial contacts outside range
     if size(TOs, 1) > 10
         TOs = TOs(2:end, :);
@@ -223,12 +235,11 @@ for n=1:length(Nimu)-lookaround
             'LineWidth', 2, ...
             'MarkerSize', 10 ...
         );
-    
     % Indicate toe-offs
     indicateEvents(TOs, "Toe off", 'rx', "ITI", -.4, accelLim - 1, Timu, imuCurrentN, lookaround);
     % Indicate ICs
     indicateEvents(ICs, "Initial contact", 'g+', "ICI", .1, accelLim - 1, Timu, imuCurrentN, lookaround);
-    % Ground contact time
+    % Display ground contact time and balance.
     if size(GCTs, 1) > 1
         if size(GCTs, 1) > 9
             gcts = GCTs(end-9:end, :);
