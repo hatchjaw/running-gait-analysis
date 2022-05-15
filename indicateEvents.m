@@ -13,7 +13,7 @@ function indicateEvents(events, eventLabel, eventMarker, intervalLabel, xOffset,
             text(eventsToLabel(t, 1) - .05, eventsToLabel(t, 2) + .2, label);
         end
         
-        % Display inter-toe-off interval and balance
+        % Display inter-event interval and balance
         if size(events, 1) > 1
             L = mean(events(events(:, 3) == 1 & events(:, 4) < 1, 4));
             R = mean(events(events(:, 3) == -1 & events(:, 4) < 1, 4));
@@ -29,6 +29,6 @@ function indicateEvents(events, eventLabel, eventMarker, intervalLabel, xOffset,
                 'interpreter', 'latex', 'FontSize', 16 ...
             );
         end
-end
+    end
 end
 
