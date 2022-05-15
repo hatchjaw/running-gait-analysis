@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Normal_12_5;
+capture = captures.Normal_7_5;
 
 % Sensor to use
 % 1: trunk front
@@ -57,7 +57,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 1.75);
+imuStartTime = max(lookaround/Fs, 1.9);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 
@@ -118,10 +118,8 @@ axisToUse = 'X';
 
 % Derivative of accelerometer Y -- jerk
 jerk = zeros(2, 1);
-toeOffs = nan(1, 2);
-nToeOffs = 1;
+toeOffs = zeros(1, 4);
 initialContacts = zeros(1, 2);
-nInitialContacts = 1;
 isStancePhaseReversal = false;
 gaitPhase = GaitEvent.Unknown;
 
@@ -129,6 +127,7 @@ gaitPhase = GaitEvent.Unknown;
 figure('Position', [100, 100, 1500, 640], 'Name', capture.name);
 
 for n=1:length(Nimu)-lookaround
+% for n=1:1000
     % (Maybe) advance the video frame
     while Tvid(n + vidNOffset) > v.CurrentTime
         frame = readFrame(v);
@@ -145,18 +144,25 @@ for n=1:length(Nimu)-lookaround
     % Update jerk
     jerk(2) = jerk(1);
     jerk(1) = (T.(accelY)(Nimu(imuCurrentN)) - T.(accelY)(Nimu(imuCurrentN-1))) / imuSamplePeriod;
+    % Detect stance phase reversal
     if ~isStancePhaseReversal && sign(jerk(1)) == 1 && ...
             T.(accelY)(Nimu(imuCurrentN)) < -.75 && T.(accelY)(Nimu(imuCurrentN)) > -1.5
         isStancePhaseReversal = true;
     end
-    % Detect toe-off
+    % Detect toe-off. Include sign of gyro for detecting L vs R foot.
     if sign(jerk(1)) == -1 && sign(jerk(2)) == 1 && isStancePhaseReversal
-        toeOffs(end+1, :) = [Timu(imuCurrentN-1); T.(accelY)(Nimu(imuCurrentN-1))];
+        toeOffs(end+1, :) = [Timu(imuCurrentN-1); ...
+            T.(accelY)(Nimu(imuCurrentN-1)); ...
+            sign(T.(gyroY)(Nimu(imuCurrentN-1))); ...
+            Timu(imuCurrentN-1) - toeOffs(end, 1)];
         isStancePhaseReversal = false;
     end
-    toeOffs = toeOffs(toeOffs(:, 1) > Timu(imuCurrentN-lookaround-1, :), :);
-    if isempty(toeOffs)
-        toeOffs = nan(1, 2);
+    % Filter toe-offs outside range
+    if size(toeOffs, 1) > 5
+        toeOffs = toeOffs(toeOffs(:, 1) > Timu(imuCurrentN-5*lookaround, :), :);
+        if isempty(toeOffs)
+            toeOffs = zeros(1, 4);
+        end
     end
     
     % Draw the current video frame.
@@ -215,11 +221,35 @@ for n=1:length(Nimu)-lookaround
             'LineWidth', 2, ...
             'MarkerSize', 10 ...
         );
-    % Display toe-offs
-    if ~isempty(toeOffs) && ~isnan(toeOffs(1,1))
+    % Indicate toe-offs
+    if ~isempty(toeOffs)
         scatter(toeOffs(:, 1), toeOffs(:, 2), 100, 'rx');
-        for t=1:size(toeOffs, 1)
-            text(toeOffs(t, 1) - .05, toeOffs(t, 2) + .2, "Toe off");
+        toeOffsToLabel = toeOffs(toeOffs(:, 1) > Timu(imuCurrentN-lookaround, :), :);
+        for t=1:size(toeOffsToLabel, 1)
+            textToDisplay = "Toe off";
+            if toeOffsToLabel(t, 3) == 1
+                textToDisplay = textToDisplay + " L";
+            else
+                textToDisplay = textToDisplay + " R";
+            end
+            text(toeOffsToLabel(t, 1) - .05, toeOffsToLabel(t, 2) + .2, textToDisplay);
+        end
+        
+        % Display inter-toe-off interval and balance
+        if size(toeOffs, 1) > 1
+            L = mean(toeOffs(toeOffs(:, 3) == 1, 4));
+            R = mean(toeOffs(toeOffs(:, 3) == -1, 4));
+            BL = L/(L+R);
+            BR = R/(L+R);
+            text(Timu(imuCurrentN - lookaround) + .1, ...
+                accelLim - 2, ...
+                { ...
+                    "$ITI = " + num2str(toeOffs(end, 4)) + "$", ...
+                    "$B_L = " + num2str(BL * 100) + "\%$", ...
+                    "$B_R = " + num2str(BR * 100) + "\%$"
+                }, ...
+                'interpreter', 'latex', 'FontSize', 16 ...
+            );
         end
     end
         hold off, ...
