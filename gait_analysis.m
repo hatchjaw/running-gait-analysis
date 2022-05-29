@@ -1,7 +1,6 @@
 clear, close all;
 
-% TODO: Bland-Altman
-%       sonification: PD/Max/JUCE
+% TODO: sonification: PD/Max/JUCE
 
 % NB Video is 60fps, IMU is 148.148148 fps
 
@@ -19,7 +18,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Normal_12_5;
+capture = captures.Normal_15;
 
 % Sensor to use
 % 1: trunk front
@@ -50,18 +49,21 @@ gyroID = 'TrignoIMSensor%1$d_Gyro%1$d_%2$c_IM__deg_sec_';
 %% Video + accelY + gyroY
 close all;
 
-doVideo = true;
-doPlot = true;
+doVideo = false;
+doPlot = false;
 % Number of samples to plot around the current time.
 lookaround = 75;
 % Minimum time interval between a toe-off and the following initial contact.
 TOICInterval = .075;
 % (Negative) jerk threshold for initial contact detection.
-ICjerkThresh = -15;
+ICjerkThresh = -12.5;
 % Acceleration threshold for initial contact detection.
-ICaccelThresh = -.625;
+ICaccelThresh = -1;
 % Acceleration range in which to detect a stance phase reversal.
 stancePhaseReversalWindow = [-1, -.5];
+% % Threshold for ground truth IC detection
+% shankJerkThresh = 350;
+shankAccelThresh = 7.5;
 
 % Sample rate
 Fs = imuSampleRate;
@@ -70,7 +72,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 1.5);
+imuStartTime = max(lookaround/Fs, 1);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 
@@ -80,20 +82,16 @@ if doVideo
     % Set the video current time via the capture offset.
     vidStartTime = imuStartTime + capture.offset;
     v.CurrentTime = vidStartTime;
-
-    videoFramePeriod = 1/v.FrameRate;
-    % Time vector for the video frames
-    vidTvec = linspace(0, v.NumFrames*videoFramePeriod, v.NumFrames)';
 end
 
 % Create time and sample vectors for the video and IMU data, based one the
 % sampling rate.
-Nvid = floor(linspace(1, v.NumFrames, v.Duration*Fs)');
+if doVideo
+    Nvid = floor(linspace(1, v.NumFrames, v.Duration*Fs)');
+    Tvid = linspace(0, v.Duration, v.Duration*Fs)';
+end
 Nimu = floor(linspace(1, length(imuSamples), imuDuration*Fs)');
-Tvid = linspace(0, v.Duration, v.Duration*Fs)';
 Timu = linspace(0, imuDuration, imuDuration*Fs)';
-% vidVec = [Nvid, Tvid];
-% imuVec = [Nimu, Timu];
 
 % Compute the data IDs for the Y axes of the gyro and accelerometer.
 gyroY = T.(sprintf(gyroID, sensorID, 'Y'));
@@ -105,7 +103,6 @@ accelZ = T.(sprintf(accelID, sensorID, 'Z'));
 % Shank accel data for ground truth
 shankLAccelX = T.(sprintf(accelID, 2, 'X'));
 shankRAccelX = T.(sprintf(accelID, 3, 'X'));
-
 
 % Gyroscope Y filter, for L/R detection.
 filtPass = 2.5/(imuSampleRate/2);
@@ -145,16 +142,19 @@ jerk = zeros(3, 1);
 TOs = zeros(1, 4);
 % Initial contacts
 ICs = zeros(1, 4);
+gtICs = zeros(1, 4);
 % Ground contact times
 GCTs = zeros(1, 2);
 isStancePhaseReversal = false;
 isSwingPhaseReversal = false;
 lastLocalMinimum = 0;
 
-% Create a figure for the plot of the video, plus gyro & accelerometer Y axes.
-figure('Position', [100, 100, 1500, 640], 'Name', capture.name);
+if doPlot
+    % Create a figure for the plot of the video, plus gyro & accelerometer Y axes.
+    figure('Position', [100, 100, 1500, 640], 'Name', capture.name);
+end
 
-for n=1:length(Nimu)-lookaround
+for n=1:length(Timu)-imuNOffset-lookaround
 % for n=1:1000
     if doVideo
         % (Maybe) advance the video frame
@@ -177,18 +177,22 @@ for n=1:length(Nimu)-lookaround
     % Update jerk
     jerk(3) = jerk(2);
     jerk(2) = jerk(1);
-    jerk(1) = (accelY(Nimu(imuCurrentN)) - accelY(Nimu(imuCurrentN-1))) / imuSamplePeriod;
+    jerk(1) = (accelY(Nimu(imuCurrentN)) - accelY(Nimu(imuCurrentN-1))) / ...
+        imuSamplePeriod;
+    
     % Detect most recent local minimum
     if isInflection(jerk, 'min')
         lastLocalMinimum = accelY(Nimu(imuCurrentN));
     end
-    % Detect stance phase reversal
+
+    % Detect stance phase reversal -- approaching a toe-off
     if ~isStancePhaseReversal && sign(jerk(1)) == 1 && ...
             accelY(Nimu(imuCurrentN)) < stancePhaseReversalWindow(2) && ...
             accelY(Nimu(imuCurrentN)) > stancePhaseReversalWindow(1) && ...
             lastLocalMinimum < -1.5
         isStancePhaseReversal = true;
     end
+
     % Detect toe-off as jerk local maximum, via change from pos to neg. 
     % Include sign of gyro for detecting L vs R foot.
     if isInflection(jerk, 'max') && isStancePhaseReversal
@@ -222,28 +226,36 @@ for n=1:length(Nimu)-lookaround
             accelY(Nimu(imuCurrentN)) < ICaccelThresh && ...
             Timu(imuCurrentN-1) - TOs(end, 1) > TOICInterval
         ICs(end+1, :) = [...
-            Timu(imuCurrentN-1); ...
-            accelY(Nimu(imuCurrentN-1)); ...
+            Timu(imuCurrentN-4); ...
+            accelY(Nimu(imuCurrentN-4)); ...
             -TOs(end, 3); ... % Opposite polarity/foot wrt to last toe off
-            Timu(imuCurrentN-1) - ICs(end, 1) ...
+            Timu(imuCurrentN-4) - ICs(end, 1) ...
         ];
         isSwingPhaseReversal = false;
 %         isStancePhaseReversal = true;
     end
-    
-    % Filter toe-offs and initial contacts outside range
-    % if size(TOs, 1) > 10
-    %     TOs = TOs(2:end, :);
-    %     if isempty(TOs)
-    %         TOs = zeros(1, 4);
-    %     end
-    % end
-    % if size(ICs, 1) > 10
-    %     ICs = ICs(2:end, :);
-    %     if isempty(ICs)
-    %         ICs = zeros(1, 4);
-    %     end
-    % end
+
+    % Once there's at least one toe-off, start collecting ground-truth ICs
+    if size(TOs, 1) > 1
+        prevFoot = gtICs(end, 3);
+        if prevFoot ~= 1 && shankLAccelX(Nimu(imuCurrentN)) < -shankAccelThresh
+            % Left IC
+            gtICs(end+1, :) = [...
+                Timu(imuCurrentN); ...
+                .25*shankLAccelX(Nimu(imuCurrentN)); ...
+                1; ...
+                Timu(imuCurrentN) - gtICs(end, 1) ...
+            ];
+        elseif prevFoot ~= -1 && shankRAccelX(Nimu(imuCurrentN)) > shankAccelThresh
+            % Right IC
+            gtICs(end+1, :) = [...
+                Timu(imuCurrentN); ...
+                .25*shankRAccelX(Nimu(imuCurrentN)); ...
+                -1; ...
+                Timu(imuCurrentN) - gtICs(end, 1) ...
+            ];
+        end
+    end
 
     if doVideo
         % Draw the current video frame.
@@ -268,6 +280,9 @@ for n=1:length(Nimu)-lookaround
         indicateEvents(TOs, "Toe off", 'rx', "ITI", -.4, accelLim - 1, Timu, imuCurrentN, lookaround);
         % Indicate ICs
         indicateEvents(ICs, "Initial contact", 'g+', "ICI", .1, accelLim - 1, Timu, imuCurrentN, lookaround);
+        % Compare with ground truth...
+        indicateEvents(gtICs, "gtIC", 'c*', "gtICI", .1, accelLim - 2.5, Timu, imuCurrentN, lookaround);
+        
         % Display ground contact time and balance.
         if size(GCTs, 1) > 1
             if size(GCTs, 1) > 9
@@ -280,7 +295,7 @@ for n=1:length(Nimu)-lookaround
             end
             BL = L/(L+R);
             BR = R/(L+R);
-            text(currentT - .175, ...
+            text(currentT - .4, ...
                 2.5, ...
                 { ...
                     "$GCT = " + num2str(GCTs(end, 1)) + "$", ...
@@ -291,20 +306,8 @@ for n=1:length(Nimu)-lookaround
             );
         end
         
-        % plot(tRange, .2 * shankL .* (abs(shankL) > 4.5)), ...
-        % plot(tRange, .2 * shankR .* (abs(shankR) > 4.5)), ...
         plot(tRange, .25*shankL),
         plot(tRange, .25*shankR),
-
-    %     plot( ...
-    %         tRange, ...
-    %         .025 * ((180/pi) * atan(accelY(Nimu(nRange))./sqrt(accelX(Nimu(nRange)).^2 + accelZ(Nimu(nRange)).^2))) ...
-    %     ), ...
-        
-    %     plot( ...
-    %         tRange, ...
-    %         .025 * ((180/pi) * atan2(accelY(Nimu(nRange)), sqrt(accelX(Nimu(nRange)).^2 + accelZ(Nimu(nRange)).^2))) ...
-    %     ), ...
         
         hold off, ...
             grid on, ...
@@ -347,6 +350,18 @@ for n=1:length(Nimu)-lookaround
         drawnow;
     end
 end
+
+scatterRange = 4:length(ICs)-20;
+icDeltas = gtICs(scatterRange, 1) - ICs(scatterRange, 1);
+meanDelta = mean(icDeltas);
+stdDev = std(icDeltas);
+figure();
+scatter(gtICs(scatterRange, 1), icDeltas),title('Bland-Altman');%, ylim([-.1, .1]);
+hold on;
+yline(meanDelta, 'r');
+yline(meanDelta + stdDev, 'b');
+yline(meanDelta - stdDev, 'b');
+hold off;
 
 %% Animated plots of IMU data
 
