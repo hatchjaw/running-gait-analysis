@@ -1,7 +1,5 @@
 clear, close all;
 
-% TODO: sonification: PD/Max/JUCE
-
 % NB Video is 60fps, IMU is 148.148148 fps
 
 % Declare all the captures, their names, and the offset, in seconds, between
@@ -30,7 +28,7 @@ sensorID = 1;
 dataToUse = 1;
 
 % Read the IMU data
-T = readtable(sprintf('captures/%s.csv', capture.name), ...
+T = readtable(sprintf('../captures/%s.csv', capture.name), ...
     'HeaderLines', 214, ...
     'Delimiter', ',' ...
 );
@@ -82,7 +80,7 @@ imuDuration = imuSamplePeriod*length(imuSamples);
 
 if doVideo
     % Read the video.
-    v = VideoReader(sprintf('videos/%s_480.mov', capture.name));
+    v = VideoReader(sprintf('../videos/%s_480.mov', capture.name));
     % Set the video current time via the capture offset.
     vidStartTime = imuStartTime + capture.offset;
     v.CurrentTime = vidStartTime;
