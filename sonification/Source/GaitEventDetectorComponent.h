@@ -29,6 +29,11 @@ public:
         InitialContact
     };
 
+    enum InflectionType {
+        Minimum,
+        Maximum
+    };
+
     struct ImuSample {
         float accelY, gyroY;
     };
@@ -69,15 +74,18 @@ private:
     static constexpr unsigned int TRUNK_GYRO_X_INDEX{9};
     static constexpr unsigned int TRUNK_GYRO_Y_INDEX{11};
     static constexpr unsigned int TRUNK_GYRO_Z_INDEX{13};
+    const std::pair<float, float> STANCE_REVERSAL_WINDOW{-1.f, -.5f};
 
     void parseImuLine();
+
+    static bool isInflection(std::vector<float> v, InflectionType type);
 
     juce::File &captureFile;
     std::unique_ptr<juce::FileInputStream> fileStream;
     bool doneProcessing{false};
     unsigned int elapsedTimeMs{0};
     CircularBuffer<ImuSample> imuData;
-    CircularBuffer<float> jerkBuffer;
+    CircularBuffer<float> jerk;
     GaitPhase gaitPhase{Unknown};
     float lastLocalMinimum{0.f};
 };

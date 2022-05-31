@@ -14,11 +14,11 @@ public:
 
     void write(T);
 
-    T readCurrent();
+    T getCurrent();
 
-    T readPrevious(unsigned int delay = 1);
+    T getPrevious(unsigned int delay = 1);
 
-    std::vector<T> readCircle();
+    std::vector<T> getCircle();
 
 private:
     unsigned int length{0};

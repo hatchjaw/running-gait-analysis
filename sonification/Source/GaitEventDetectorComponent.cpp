@@ -7,7 +7,7 @@
 GaitEventDetectorComponent::GaitEventDetectorComponent(File &file) :
         captureFile(file),
         imuData(500, {0.f, 0.f}),
-        jerkBuffer(3, 0.f) {
+        jerk(3, 0.f) {
 }
 
 bool GaitEventDetectorComponent::prepareToProcess() {
@@ -37,10 +37,42 @@ void GaitEventDetectorComponent::processNextSample() {
     if (doneProcessing)
         return;
 
-    jerkBuffer.write(
-            (imuData.readCurrent().accelY - imuData.readPrevious().accelY) /
+    auto currentAccelY = imuData.getCurrent().accelY;
+    jerk.write(
+            (currentAccelY - imuData.getPrevious().accelY) /
             (IMU_SAMPLE_PERIOD_MS * .001f)
     );
+
+    auto j = jerk.getCircle();
+
+    if (isInflection(j, InflectionType::Minimum)) {
+        lastLocalMinimum = currentAccelY;
+    }
+
+    // Detect stance phase reversal -- approaching a toe-off
+    if (gaitPhase != StanceReversal &&
+        jerk.getCurrent() > 0 &&
+        currentAccelY > STANCE_REVERSAL_WINDOW.first &&
+        currentAccelY < STANCE_REVERSAL_WINDOW.second &&
+        lastLocalMinimum < -1.5) {
+        gaitPhase = StanceReversal;
+    }
+
+    if (isInflection(j, InflectionType::Maximum) && gaitPhase == StanceReversal) {
+
+    }
+}
+
+bool GaitEventDetectorComponent::isInflection(std::vector<float> v, InflectionType type) {
+    auto end = v.size() - 1;
+    switch (type) {
+        case Minimum:
+            return (v[end] > 0 && v[end - 1] < 0) ||
+                   (v[end] > 0 && v[end - 1] == 0 && v[end - 2] < 0);
+        case Maximum:
+            return (v[end] < 0 && v[end - 1] > 0) ||
+                   (v[end] < 0 && v[end - 1] == 0 && v[end - 2] > 0);
+    }
 }
 
 void GaitEventDetectorComponent::parseImuLine() {
@@ -64,9 +96,9 @@ void GaitEventDetectorComponent::parseImuLine() {
     }
 
     imuData.write({
-            std::stof(fields[TRUNK_ACCEL_Y_INDEX].toStdString()),
-            std::stof(fields[TRUNK_GYRO_Y_INDEX].toStdString())
-    });
+                          std::stof(fields[TRUNK_ACCEL_Y_INDEX].toStdString()),
+                          std::stof(fields[TRUNK_GYRO_Y_INDEX].toStdString())
+                  });
 }
 
 bool GaitEventDetectorComponent::isDoneProcessing() const {
