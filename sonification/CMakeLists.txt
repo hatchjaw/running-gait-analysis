@@ -62,7 +62,9 @@ juce_generate_juce_header(GaitSonification)
 target_sources(GaitSonification
         PRIVATE
         Source/Main.cpp
-        Source/MainComponent.cpp)
+        Source/MainComponent.cpp
+        Source/GaitEventDetectorComponent.cpp
+        Source/CircularBuffer.cpp)
 
 # `target_compile_definitions` adds some preprocessor definitions to our target. In a Projucer
 # project, these might be passed in the 'Preprocessor Definitions' field. JUCE modules also make use

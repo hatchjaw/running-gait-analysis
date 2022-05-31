@@ -1,7 +1,7 @@
 #include "MainComponent.h"
 
 //==============================================================================
-MainComponent::MainComponent() {
+MainComponent::MainComponent() : gaitEventDetector(captureFile) {
     // Make sure you set the size of the component after
     // you add any child components.
     setSize(1000, 800);
@@ -44,6 +44,8 @@ MainComponent::~MainComponent() {
     // This shuts down the audio device and clears the audio source.
     shutdownAudio();
     openBrowserButton.removeListener(this);
+    playButton.removeListener(this);
+    stopButton.removeListener(this);
 }
 
 //==============================================================================
@@ -95,21 +97,21 @@ void MainComponent::buttonClicked(Button *button) {
         fileChooser->launchAsync(
                 FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
                 [this](const FileChooser &chooser) {
-                    auto file = chooser.getResult();
-                    if (file.getFileName() != "" && file.existsAsFile()) {
+                    auto csvFile = chooser.getResult();
+                    if (csvFile.getFileName() != "" && csvFile.existsAsFile()) {
                         // Try to load associated video.
-                        auto videoFile = File{file.getParentDirectory().getFullPathName() +
+                        auto videoFile = File{csvFile.getParentDirectory().getFullPathName() +
                                               "/../videos/" +
-                                              file.getFileNameWithoutExtension() +
+                                              csvFile.getFileNameWithoutExtension() +
                                               "_480.mov"};
                         if (videoFile.existsAsFile()) {
-                            captureFile = file;
-
                             video.load(videoFile);
                             video.setVisible(true);
 
-                            selectedFileLabel.setText("File: " + captureFile.getFileName(),
+                            selectedFileLabel.setText("File: " + csvFile.getFileName(),
                                                       NotificationType::dontSendNotification);
+
+                            captureFile = csvFile;
 
                             switchPlayState(false);
                         } else {
@@ -123,15 +125,8 @@ void MainComponent::buttonClicked(Button *button) {
                 }
         );
     } else if (button == &playButton && playButton.isEnabled()) {
-        // Open the file
-        fileStream = std::make_unique<juce::FileInputStream>(captureFile);
-
-        if (!fileStream->openedOk())
+        if (!gaitEventDetector.prepareToProcess()) {
             return;
-
-        // Get the header lines out of the way.
-        for (unsigned int l = 0; l < NUM_HEADER_LINES; ++l) {
-            fileStream->readNextLine();
         }
         switchPlayState(true);
     } else if (button == &stopButton) {
@@ -140,36 +135,20 @@ void MainComponent::buttonClicked(Button *button) {
 }
 
 void MainComponent::hiResTimerCallback() {
-    if (currentTimeMs >= IMU_SAMPLE_PERIOD_MS) {
-        auto data = parseLine();
+    gaitEventDetector.advanceClock(static_cast<unsigned int>(getTimerInterval()));
+    if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
+        // Check for gait events...
+        gaitEventDetector.processNextSample();
 
-        // Detect end of data.
-        if (data[TRUNK_ACCEL_Y_INDEX] == "") {
+        if (gaitEventDetector.isDoneProcessing()) {
             switchPlayState(false);
             return;
         }
 
-        // Check for gait events...
-
-        currentTimeMs -= IMU_SAMPLE_PERIOD_MS; //0 - (currentTimeMs - IMU_SAMPLE_PERIOD)
+        imuSampleTimeMs -= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS;
     }
 
-    currentTimeMs += static_cast<float>(TIMER_INCREMENT_MS);
-}
-
-juce::StringArray MainComponent::parseLine() {
-    if (fileStream->isExhausted())
-        return {""};
-
-    auto line = fileStream->readNextLine();
-    juce::StringArray fields;
-
-    do {
-        fields.add(line.upToFirstOccurrenceOf(",", false, true));
-        line = line.fromFirstOccurrenceOf(",", false, true);
-    } while (line != "");
-
-    return fields;
+    imuSampleTimeMs += static_cast<float>(TIMER_INCREMENT_MS);
 }
 
 void MainComponent::switchPlayState(bool isPlaying) {
@@ -177,11 +156,10 @@ void MainComponent::switchPlayState(bool isPlaying) {
     stopButton.setEnabled(isPlaying);
 
     if (isPlaying) {
-        currentTimeMs = 0.f;
+        imuSampleTimeMs = 0.f;
         startTimer(TIMER_INCREMENT_MS);
         video.play();
-    }
-    else {
+    } else {
         stopTimer();
         video.stop();
         video.setPlayPosition(VIDEO_OFFSETS.getWithDefault(

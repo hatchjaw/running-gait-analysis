@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Normal_10;
+capture = captures.Normal_15;
 
 % Sensor to use
 % 1: trunk front
@@ -50,7 +50,7 @@ close all;
 doVideo = false;
 doPlot = false;
 plotGyro = false;
-plotAccel = false;
+plotAccel = true;
 % Number of samples to plot around the current time.
 lookaround = 75;
 % Minimum time interval between a toe-off and the following initial contact.
@@ -59,12 +59,15 @@ TOICInterval = .075;
 ICjerkThresh = -12.5;
 % Acceleration threshold for initial contact detection.
 ICaccelThresh = -1;
+% Based one the above, IC happened this many samples ago:
+IClookbackSamps = 4;
 % Acceleration range in which to detect a stance phase reversal.
 stancePhaseReversalWindow = [-1, -.5];
 % % Threshold for 'ground truth' IC detection.
 % shankJerkThresh = 350;
-shankAccelThresh = 5.5;
-% Number of pairs of strides to use for GTC balance running average.
+shankAccelThresh = 3;
+shankJerkThresh = 225;
+% Number of strides (pairs of steps) to use for GTC balance running average.
 strideLookback = 4;
 
 % Sample rate
@@ -74,7 +77,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 1);
+imuStartTime = max(lookaround/Fs, 23);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 
@@ -252,7 +255,7 @@ for n=1:length(Timu)-imuNOffset-lookaround
                         xticks(46:54), ...
                         yticks([]), ...
                         grid on;
-                    title("GCT balance, " + num2str(2*strideLookback) + " stride average");
+                    title("GCT balance, " + num2str(2*strideLookback) + " step average");
                     hold on;
                     text(50, -.2, ...
                         "Trunk only: $" + num2str(BR * 100) + "\%$", ...
@@ -277,10 +280,10 @@ for n=1:length(Timu)-imuNOffset-lookaround
             accelY(Nimu(imuCurrentN)) < ICaccelThresh && ...
             Timu(imuCurrentN-1) - TOs(end, 1) > TOICInterval
         ICs(end+1, :) = [...
-            Timu(imuCurrentN-4); ...
-            accelY(Nimu(imuCurrentN-4)); ...
+            Timu(imuCurrentN-IClookbackSamps); ...
+            accelY(Nimu(imuCurrentN-IClookbackSamps)); ...
             -TOs(end, 3); ... % Opposite polarity/foot wrt to last toe off
-            Timu(imuCurrentN-4) - ICs(end, 1) ...
+            Timu(imuCurrentN-IClookbackSamps) - ICs(end, 1) ...
         ];
         isSwingPhaseReversal = false;
 %         isStancePhaseReversal = true;
@@ -289,7 +292,15 @@ for n=1:length(Timu)-imuNOffset-lookaround
     % Once there's at least one toe-off, start collecting ground-truth ICs
     if size(TOs, 1) > 1
         prevFoot = gtICs(end, 3);
-        if prevFoot ~= 1 && shankLAccelX(Nimu(imuCurrentN)) < -shankAccelThresh
+        shankLJerk = ( ...
+            shankLAccelX(Nimu(imuCurrentN)) - shankLAccelX(Nimu(imuCurrentN-1))...
+        ) / imuSamplePeriod;
+        shankRJerk = ( ...
+            shankRAccelX(Nimu(imuCurrentN)) - shankRAccelX(Nimu(imuCurrentN-1))...
+        ) / imuSamplePeriod;
+        if prevFoot ~= 1 && ...
+                shankLJerk > shankJerkThresh && ...
+                Timu(imuCurrentN) - TOs(end, 1) > TOICInterval
             % Left IC
             gtICs(end+1, :) = [...
                 Timu(imuCurrentN); ...
@@ -297,7 +308,9 @@ for n=1:length(Timu)-imuNOffset-lookaround
                 1; ...
                 Timu(imuCurrentN) - gtICs(end, 1) ...
             ];
-        elseif prevFoot ~= -1 && shankRAccelX(Nimu(imuCurrentN)) > shankAccelThresh
+        elseif prevFoot ~= -1 && ...
+                shankRJerk < -shankJerkThresh && ...
+                Timu(imuCurrentN) - TOs(end, 1) > TOICInterval
             % Right IC
             gtICs(end+1, :) = [...
                 Timu(imuCurrentN); ...
@@ -401,7 +414,10 @@ icDeltas = gtICs(scatterRange, 1) - ICs(scatterRange, 1);
 meanDelta = mean(icDeltas);
 stdDev = std(icDeltas);
 figure();
-scatter(gtICs(scatterRange, 1), icDeltas),title('Bland-Altman');%, ylim([-.1, .1]);
+scatter(gtICs(scatterRange, 1), icDeltas), ...
+    title('Bland-Altman'), ...
+    % ylim([-.1, .1]), ...
+    xlabel('Time'), ylabel('Ground truth ICs - Trunk ICs');
 hold on;
 yline(meanDelta, 'r');
 yline(meanDelta + stdDev, 'b');
