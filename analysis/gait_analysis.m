@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Normal_12_5;
+capture = captures.Normal_10;
 
 % Sensor to use
 % 1: trunk front
@@ -48,7 +48,7 @@ gyroID = 'TrignoIMSensor%1$d_Gyro%1$d_%2$c_IM__deg_sec_';
 close all;
 
 doVideo = false;
-doPlot = true;
+doPlot = false;
 plotGyro = false;
 plotAccel = false;
 % Number of samples to plot around the current time.
@@ -63,7 +63,7 @@ ICaccelThresh = -1;
 stancePhaseReversalWindow = [-1, -.5];
 % % Threshold for 'ground truth' IC detection.
 % shankJerkThresh = 350;
-shankAccelThresh = 7;
+shankAccelThresh = 5.5;
 % Number of pairs of strides to use for GTC balance running average.
 strideLookback = 4;
 
@@ -407,6 +407,8 @@ yline(meanDelta, 'r');
 yline(meanDelta + stdDev, 'b');
 yline(meanDelta - stdDev, 'b');
 hold off;
+
+% paramci()
 
 %% Animated plots of IMU data
 
