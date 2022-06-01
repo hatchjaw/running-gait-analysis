@@ -9,6 +9,12 @@ template<typename T>
 CircularBuffer<T>::CircularBuffer(unsigned int bufferLength, T init) {
     length = bufferLength;
     buffer.resize(length, init);
+    defaultValue = init;
+}
+
+template<typename T>
+void CircularBuffer<T>::clear() {
+    std::fill(buffer.begin(), buffer.end(), defaultValue);
 }
 
 template<typename T>
@@ -37,20 +43,46 @@ T CircularBuffer<T>::getPrevious(unsigned int delay) {
 
 template<typename T>
 std::vector<T> CircularBuffer<T>::getCircle() {
-    std::vector<T> out(length);
-    auto readIndex = writeIndex + 1;
-    for (unsigned int i = 0; i < length; ++i) {
-        if (readIndex >= length) {
-            readIndex = 0;
-        }
+//    std::vector<T> out(length);
+//    auto readIndex = writeIndex + 1;
+//    for (unsigned int i = 0; i < length; ++i) {
+//        if (readIndex >= length) {
+//            readIndex = 0;
+//        }
+//        out[i] = buffer[readIndex];
+//        ++readIndex;
+//    }
+    return getSamples(length);
+}
+
+template<typename T>
+std::vector<T> CircularBuffer<T>::getSamples(unsigned int samplesToGet) {
+    samplesToGet = std::min(samplesToGet, length);
+    std::vector<T> out(samplesToGet);
+
+    // Get samples, newest first.
+    auto readIndex = writeIndex;
+
+    for (unsigned int i = 0; i < samplesToGet; ++i) {
         out[i] = buffer[readIndex];
-        ++readIndex;
+
+        if (readIndex == 0) {
+            readIndex = length;
+        }
+
+        --readIndex;
     }
     return out;
 }
 
 template
 class CircularBuffer<GaitEventDetectorComponent::ImuSample>;
+
+template
+class CircularBuffer<GaitEventDetectorComponent::GroundContact>;
+
+template
+class CircularBuffer<GaitEventDetectorComponent::GaitEvent>;
 
 template
 class CircularBuffer<float>;

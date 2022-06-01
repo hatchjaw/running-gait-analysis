@@ -85,11 +85,13 @@ void MainComponent::paint(juce::Graphics &g) {
 void MainComponent::resized() {
     auto bounds = getLocalBounds();
 
+    auto videoWidth = 360;
+
     openBrowserButton.setBounds(bounds.getX() + 5, bounds.getY() + 5, 150, 30);
     selectedFileLabel.setBounds(openBrowserButton.getRight(), bounds.getY() + 5, 200, 30);
     playButton.setBounds(bounds.getX() + 5, openBrowserButton.getBottom() + 5, 100, 30);
     stopButton.setBounds(playButton.getRight() + 5, openBrowserButton.getBottom() + 5, 100, 30);
-    video.setBounds(bounds.getX() + 5, playButton.getBottom() + 20, 360, 640);
+    video.setBounds(bounds.getRight() - videoWidth - 5, playButton.getBottom() + 20, videoWidth, 640);
 }
 
 void MainComponent::buttonClicked(Button *button) {
@@ -135,8 +137,9 @@ void MainComponent::buttonClicked(Button *button) {
 }
 
 void MainComponent::hiResTimerCallback() {
-    gaitEventDetector.advanceClock(static_cast<unsigned int>(getTimerInterval()));
     if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
+        auto overshoot = imuSampleTimeMs - GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS;
+        gaitEventDetector.advanceClock(-overshoot);
         // Check for gait events...
         gaitEventDetector.processNextSample();
 
@@ -145,7 +148,10 @@ void MainComponent::hiResTimerCallback() {
             return;
         }
 
+        gaitEventDetector.advanceClock(static_cast<float>(getTimerInterval()) + overshoot);
         imuSampleTimeMs -= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS;
+    } else {
+        gaitEventDetector.advanceClock(static_cast<float>(getTimerInterval()));
     }
 
     imuSampleTimeMs += static_cast<float>(TIMER_INCREMENT_MS);

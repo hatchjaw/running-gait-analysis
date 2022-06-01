@@ -12,6 +12,8 @@ class CircularBuffer {
 public:
     explicit CircularBuffer(unsigned int bufferLength, T init);
 
+    void clear();
+
     void write(T);
 
     T getCurrent();
@@ -20,9 +22,12 @@ public:
 
     std::vector<T> getCircle();
 
+    std::vector<T> getSamples(unsigned int samplesToGet = 1);
+
 private:
     unsigned int length{0};
     std::vector<T> buffer;
+    T defaultValue;
     unsigned int writeIndex{0};
 };
 
