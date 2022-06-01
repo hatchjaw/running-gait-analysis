@@ -38,6 +38,8 @@ MainComponent::MainComponent() : gaitEventDetector(captureFile) {
     stopButton.setEnabled(false);
 
     addChildComponent(video);
+
+    addAndMakeVisible(gaitEventDetector);
 }
 
 MainComponent::~MainComponent() {
@@ -86,12 +88,17 @@ void MainComponent::resized() {
     auto bounds = getLocalBounds();
 
     auto videoWidth = 360;
+    auto padding = 5;
 
-    openBrowserButton.setBounds(bounds.getX() + 5, bounds.getY() + 5, 150, 30);
-    selectedFileLabel.setBounds(openBrowserButton.getRight(), bounds.getY() + 5, 200, 30);
-    playButton.setBounds(bounds.getX() + 5, openBrowserButton.getBottom() + 5, 100, 30);
-    stopButton.setBounds(playButton.getRight() + 5, openBrowserButton.getBottom() + 5, 100, 30);
-    video.setBounds(bounds.getRight() - videoWidth - 5, playButton.getBottom() + 20, videoWidth, 640);
+    openBrowserButton.setBounds(bounds.getX() + padding, bounds.getY() + padding, 150, 30);
+    selectedFileLabel.setBounds(openBrowserButton.getRight(), bounds.getY() + padding, 200, 30);
+    playButton.setBounds(bounds.getX() + padding, openBrowserButton.getBottom() + padding, 100, 30);
+    stopButton.setBounds(playButton.getRight() + padding, openBrowserButton.getBottom() + padding, 100, 30);
+    video.setBounds(bounds.getRight() - videoWidth - padding, playButton.getBottom() + 20, videoWidth, 640);
+    gaitEventDetector.setBounds(bounds.getX() + padding,
+                                playButton.getBottom() + 20,
+                                bounds.getWidth() - videoWidth - padding * 2,
+                                video.getHeight());
 }
 
 void MainComponent::buttonClicked(Button *button) {
@@ -115,7 +122,7 @@ void MainComponent::buttonClicked(Button *button) {
 
                             captureFile = csvFile;
 
-                            switchPlayState(false);
+                            switchPlayState(PlayState::Stopped);
                         } else {
                             selectedFileLabel.setText("Loaded capture data, but failed to load video.",
                                                       NotificationType::dontSendNotification);;
@@ -130,21 +137,23 @@ void MainComponent::buttonClicked(Button *button) {
         if (!gaitEventDetector.prepareToProcess()) {
             return;
         }
-        switchPlayState(true);
+        switchPlayState(PlayState::Playing);
     } else if (button == &stopButton) {
-        switchPlayState(false);
+        switchPlayState(PlayState::Stopped);
     }
 }
 
 void MainComponent::hiResTimerCallback() {
-    if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
+    if (!video.isPlaying()) {
+        gaitEventDetector.stop();
+    } else if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
         auto overshoot = imuSampleTimeMs - GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS;
         gaitEventDetector.advanceClock(-overshoot);
         // Check for gait events...
         gaitEventDetector.processNextSample();
 
         if (gaitEventDetector.isDoneProcessing()) {
-            switchPlayState(false);
+            switchPlayState(PlayState::Stopped);
             return;
         }
 
@@ -157,19 +166,23 @@ void MainComponent::hiResTimerCallback() {
     imuSampleTimeMs += static_cast<float>(TIMER_INCREMENT_MS);
 }
 
-void MainComponent::switchPlayState(bool isPlaying) {
-    playButton.setEnabled(!isPlaying);
-    stopButton.setEnabled(isPlaying);
-
-    if (isPlaying) {
-        imuSampleTimeMs = 0.f;
-        startTimer(TIMER_INCREMENT_MS);
-        video.play();
-    } else {
-        stopTimer();
-        video.stop();
-        video.setPlayPosition(VIDEO_OFFSETS.getWithDefault(
-                captureFile.getFileNameWithoutExtension(), 30.0
-        ));
+void MainComponent::switchPlayState(PlayState state) {
+    switch (state) {
+        case PlayState::Playing:
+            playButton.setEnabled(false);
+            stopButton.setEnabled(true);
+            imuSampleTimeMs = 0.f;
+            startTimer(TIMER_INCREMENT_MS);
+            video.play();
+            break;
+        case PlayState::Stopped:
+            playButton.setEnabled(true);
+            stopButton.setEnabled(false);
+            stopTimer();
+            video.stop();
+            video.setPlayPosition(VIDEO_OFFSETS.getWithDefault(
+                    captureFile.getFileNameWithoutExtension(), 30.0
+            ));
+            break;
     }
 }

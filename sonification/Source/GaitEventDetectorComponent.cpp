@@ -25,6 +25,7 @@ bool GaitEventDetectorComponent::prepareToProcess() {
     }
 
     reset();
+    startTimerHz(30);
 
     return true;
 }
@@ -36,8 +37,10 @@ void GaitEventDetectorComponent::advanceClock(float ms) {
 void GaitEventDetectorComponent::processNextSample() {
     parseImuLine();
 
-    if (doneProcessing)
+    if (doneProcessing) {
+        stopTimer();
         return;
+    }
 
     // Calculate jerk.
     auto currentAccelY = imuData.getCurrent().accelY;
@@ -237,12 +240,63 @@ void GaitEventDetectorComponent::reset() {
 }
 
 void GaitEventDetectorComponent::paint(Graphics &g) {
+    g.setColour(juce::Colours::grey);
+    g.drawRect(getLocalBounds(), 1);   // draw an outline around the component
     // Draw accelY
+    g.setColour(Colours::lightskyblue);
+    // Draw the path using a stroke (thickness) of 2 pixels.
+    g.strokePath(generateAccelYPath(), PathStrokeType(2.0f));
 
     // Mark events
 
     // Draw GTC balance
 }
 
+juce::Path GaitEventDetectorComponent::generateAccelYPath() {
+    // Get the accelerometer data.
+    auto data = imuData.getSamples(200);
+
+    auto width = static_cast<float>(getWidth());
+    auto height = static_cast<float>(getHeight());
+    auto right = static_cast<float>(getRight()) - 5;
+
+    // Y-axis is in the vertical middle of the component
+    auto yaxis = height * .5f;
+    auto scaling = 20.f;
+
+    // Initialise path
+    juce::Path stringPath;
+
+    // Start path
+    stringPath.startNewSubPath(right, yaxis - data[0].accelY * scaling);
+    auto N = data.size();
+
+    // Visual spacing between points.
+    auto spacing = width / static_cast<float>(N - 1);
+    auto x = right - spacing;
+
+    for (unsigned long n = 1; n < N; ++n) {
+        auto newY = yaxis - data[n].accelY * scaling;
+
+        // Prevent NaN values throwing an exception.
+        if (isnan(newY)) {
+            newY = 0;
+        }
+
+        stringPath.lineTo(x, newY);
+        x -= spacing;
+    }
+
+    return stringPath;
+}
+
 void GaitEventDetectorComponent::resized() {
+}
+
+void GaitEventDetectorComponent::timerCallback() {
+    this->repaint();
+}
+
+void GaitEventDetectorComponent::stop() {
+    stopTimer();
 }

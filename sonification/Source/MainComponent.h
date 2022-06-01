@@ -17,6 +17,10 @@ private:
     void hiResTimerCallback() override;
 
 public:
+    enum class PlayState {
+        Playing,
+        Stopped
+    };
     //==============================================================================
     MainComponent();
 
@@ -49,9 +53,9 @@ private:
 
     void buttonClicked(Button *button) override;
 
-    void switchPlayState(bool isPlaying);
+    void switchPlayState(PlayState state);
     //==============================================================================
-    // Your private member variables go here...
+    PlayState playState;
 
     juce::TextButton openBrowserButton;
     std::unique_ptr<FileChooser> fileChooser;

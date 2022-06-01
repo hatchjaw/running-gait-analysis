@@ -9,7 +9,7 @@
 #include "CircularBuffer.h"
 #include "BiquadFilter.h"
 
-class GaitEventDetectorComponent : public juce::Component {
+class GaitEventDetectorComponent : public juce::Component, juce::Timer {
 
 public:
     static constexpr float IMU_SAMPLE_PERIOD_MS{6.75f};
@@ -71,6 +71,10 @@ public:
 
     void resized() override;
 
+    void timerCallback() override;
+
+    void stop();
+
 private:
     static constexpr unsigned int NUM_HEADER_LINES{215};
     static constexpr unsigned int TRUNK_ACCEL_X_INDEX{3};
@@ -96,6 +100,7 @@ private:
     bool isToeOff();
     bool isInitialContact(float currentAccelY);
     void reset();
+    juce::Path generateAccelYPath();
 
     juce::File &captureFile;
     std::unique_ptr<juce::FileInputStream> fileStream;
