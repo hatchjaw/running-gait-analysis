@@ -21,7 +21,7 @@ MainComponent::MainComponent() : gaitEventDetector(captureFile) {
                                                 "*.csv");
 
     addAndMakeVisible(openBrowserButton);
-    openBrowserButton.setButtonText("Choose capture file");
+    openBrowserButton.setButtonText("Select capture file");
     openBrowserButton.addListener(this);
 
     addAndMakeVisible(selectedFileLabel);
@@ -36,6 +36,20 @@ MainComponent::MainComponent() : gaitEventDetector(captureFile) {
     stopButton.setButtonText("Stop");
     stopButton.addListener(this);
     stopButton.setEnabled(false);
+
+    addAndMakeVisible(playbackSpeedLabel);
+    playbackSpeedLabel.attachToComponent(&playbackSpeedSlider, true);
+    playbackSpeedLabel.setText("Data playback rate", juce::dontSendNotification);
+
+    addAndMakeVisible(playbackSpeedSlider);
+    playbackSpeedSlider.addListener(this);
+    playbackSpeedSlider.setEnabled(false);
+    playbackSpeedSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    playbackSpeedSlider.setNormalisableRange({.1, 2.0, .01});
+    playbackSpeedSlider.setValue(1.0);
+    playbackSpeedSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, playbackSpeedSlider.getTextBoxWidth(),
+                                        playbackSpeedSlider.getTextBoxHeight());
+    playbackSpeedSlider.setTextValueSuffix("x");
 
     addChildComponent(video);
 
@@ -82,6 +96,20 @@ void MainComponent::releaseResources() {
 void MainComponent::paint(juce::Graphics &g) {
     // (Our component is opaque, so we must completely fill the background with a solid colour)
     g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+
+    auto bounds = getLocalBounds();
+    g.setColour(Colours::pink);
+    g.drawText("Video: " + juce::String(video.getPlayPosition()), bounds.getRight() - 100, bounds.getBottom() - 50,
+               100,
+               50,
+               juce::Justification::left);
+    g.setColour(Colours::lightblue);
+    g.drawText("IMU:   " + juce::String(gaitEventDetector.getCurrentTime() * .001 + videoOffset), getRight() - 100,
+               getBottom
+                       () - 80,
+               100,
+               50,
+               juce::Justification::left);
 }
 
 void MainComponent::resized() {
@@ -94,6 +122,10 @@ void MainComponent::resized() {
     selectedFileLabel.setBounds(openBrowserButton.getRight(), bounds.getY() + padding, 200, 30);
     playButton.setBounds(bounds.getX() + padding, openBrowserButton.getBottom() + padding, 100, 30);
     stopButton.setBounds(playButton.getRight() + padding, openBrowserButton.getBottom() + padding, 100, 30);
+    playbackSpeedSlider.setBounds(stopButton.getRight() + 150,
+                                  openBrowserButton.getBottom() + padding,
+                                  250,
+                                  30);
     video.setBounds(bounds.getRight() - videoWidth - padding, playButton.getBottom() + 20, videoWidth, 640);
     gaitEventDetector.setBounds(bounds.getX() + padding,
                                 playButton.getBottom() + 20,
@@ -103,6 +135,7 @@ void MainComponent::resized() {
 
 void MainComponent::buttonClicked(Button *button) {
     if (button == &openBrowserButton) {
+        switchPlayState(PlayState::Stopped);
         fileChooser->launchAsync(
                 FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
                 [this](const FileChooser &chooser) {
@@ -122,6 +155,7 @@ void MainComponent::buttonClicked(Button *button) {
 
                             captureFile = csvFile;
 
+                            playbackSpeedSlider.setEnabled(true);
                             switchPlayState(PlayState::Stopped);
                         } else {
                             selectedFileLabel.setText("Loaded capture data, but failed to load video.",
@@ -137,6 +171,8 @@ void MainComponent::buttonClicked(Button *button) {
         if (!gaitEventDetector.prepareToProcess()) {
             return;
         }
+        auto imuTime = gaitEventDetector.getCurrentTime() * .001;
+        video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
         switchPlayState(PlayState::Playing);
     } else if (button == &stopButton) {
         switchPlayState(PlayState::Stopped);
@@ -147,8 +183,6 @@ void MainComponent::hiResTimerCallback() {
     if (!video.isPlaying()) {
         gaitEventDetector.stop();
     } else if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
-        auto overshoot = imuSampleTimeMs - GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS;
-        gaitEventDetector.advanceClock(-overshoot);
         // Check for gait events...
         gaitEventDetector.processNextSample();
 
@@ -157,13 +191,20 @@ void MainComponent::hiResTimerCallback() {
             return;
         }
 
-        gaitEventDetector.advanceClock(static_cast<float>(getTimerInterval()) + overshoot);
+//        // Try to keep the video in sync.
+        if (gaitEventDetector.getElapsedSamples() % 10 == 0) {
+            const MessageManagerLock mmLock;
+            repaint();
+            if (gaitEventDetector.getElapsedSamples() % 2500 == 0) {
+                auto imuTime = gaitEventDetector.getCurrentTime() * .001;
+                video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
+            }
+        }
+
         imuSampleTimeMs -= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS;
-    } else {
-        gaitEventDetector.advanceClock(static_cast<float>(getTimerInterval()));
     }
 
-    imuSampleTimeMs += static_cast<float>(TIMER_INCREMENT_MS);
+    imuSampleTimeMs += static_cast<float>(TIMER_INCREMENT_MS * playbackSpeed);
 }
 
 void MainComponent::switchPlayState(PlayState state) {
@@ -179,10 +220,22 @@ void MainComponent::switchPlayState(PlayState state) {
             playButton.setEnabled(true);
             stopButton.setEnabled(false);
             stopTimer();
+            gaitEventDetector.stop(true);
             video.stop();
-            video.setPlayPosition(VIDEO_OFFSETS.getWithDefault(
+            videoOffset = VIDEO_OFFSETS.getWithDefault(
                     captureFile.getFileNameWithoutExtension(), 30.0
-            ));
+            );
+            video.setPlayPosition(videoOffset);
             break;
+    }
+}
+
+void MainComponent::sliderValueChanged(Slider *slider) {}
+
+void MainComponent::sliderDragEnded(Slider *slider) {
+    if (slider == &playbackSpeedSlider) {
+        auto speed = slider->getValue();
+        video.setPlaySpeed(speed);
+        playbackSpeed = static_cast<float>(speed);
     }
 }

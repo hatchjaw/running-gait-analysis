@@ -52,7 +52,7 @@ public:
         GaitEventType type;
         Foot foot;
         float timeStampMs;
-        unsigned int sample;
+        unsigned int sampleIndex;
         float accelValue;
         float interval;
     };
@@ -73,7 +73,11 @@ public:
 
     void timerCallback() override;
 
-    void stop();
+    void stop(bool andReset = false);
+
+    float getCurrentTime() const;
+
+    int getElapsedSamples() const;
 
 private:
     static constexpr unsigned int NUM_HEADER_LINES{215};
@@ -93,6 +97,10 @@ private:
     static constexpr float TO_IC_INTERVAL_MS{75.f};
     // Based one the above, initial contact happened this many samples ago:
     static constexpr int IC_LOOKBACK_SAMPS = 4;
+    // The number of samples to plot, and to inspect for events to plot.
+    static constexpr int PLOT_LOOKBACK = 150;
+    static constexpr float PLOT_V_SCALING = 30.f;
+    static constexpr float Y_AXIS_POSITION = .66f;
 
     void parseImuLine();
 
@@ -116,6 +124,10 @@ private:
     GaitPhase gaitPhase{GaitPhase::Unknown};
     float lastLocalMinimum{0.f};
     BiquadFilter gyroFilter{0.002943989366965, 0.005887978733929, 0.002943989366965, 1.840758682071433, -0.852534639539291};
+
+    void markEvents(Graphics &g);
+
+    void displayGctBalance(Graphics &g);
 };
 
 

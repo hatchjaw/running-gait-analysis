@@ -42,6 +42,9 @@ void GaitEventDetectorComponent::processNextSample() {
         return;
     }
 
+    ++elapsedSamples;
+    elapsedTimeMs += IMU_SAMPLE_PERIOD_MS;
+
     // Calculate jerk.
     auto currentAccelY = imuData.getCurrent().accelY;
     jerk.write(
@@ -81,10 +84,10 @@ void GaitEventDetectorComponent::processNextSample() {
         auto toeOff = GaitEvent{
                 GaitEventType::ToeOff,
                 nextFoot,
-                elapsedTimeMs,
-                elapsedSamples,
-                currentAccelY,
-                elapsedTimeMs - lastToeOff.timeStampMs
+                elapsedTimeMs - IMU_SAMPLE_PERIOD_MS,
+                elapsedSamples - 1,
+                imuData.getPrevious().accelY,
+                elapsedTimeMs - IMU_SAMPLE_PERIOD_MS - lastToeOff.timeStampMs
         };
 
         gaitEvents.write(toeOff);
@@ -164,19 +167,17 @@ void GaitEventDetectorComponent::processNextSample() {
 
         gaitPhase = GaitPhase::Unknown;
     }
-
-    ++elapsedSamples;
 }
 
 bool GaitEventDetectorComponent::isInflection(std::vector<float> v, InflectionType type) {
-    auto end = v.size() - 1;
+    // Expect most recent first...
     switch (type) {
         case InflectionType::Minimum:
-            return (v[end] > 0 && v[end - 1] < 0) ||
-                   (v[end] > 0 && v[end - 1] == 0 && v[end - 2] < 0);
+            return (v[0] > 0 && v[1] < 0) ||
+                   (v[0] > 0 && v[1] == 0 && v[2] < 0);
         case InflectionType::Maximum:
-            return (v[end] < 0 && v[end - 1] > 0) ||
-                   (v[end] < 0 && v[end - 1] == 0 && v[end - 2] > 0);
+            return (v[0] < 0 && v[1] > 0) ||
+                   (v[0] < 0 && v[1] == 0 && v[2] > 0);
     }
 }
 
@@ -242,33 +243,39 @@ void GaitEventDetectorComponent::reset() {
 void GaitEventDetectorComponent::paint(Graphics &g) {
     g.setColour(juce::Colours::grey);
     g.drawRect(getLocalBounds(), 1);   // draw an outline around the component
-    // Draw accelY
-    g.setColour(Colours::lightskyblue);
-    // Draw the path using a stroke (thickness) of 2 pixels.
-    g.strokePath(generateAccelYPath(), PathStrokeType(2.0f));
 
-    // Mark events
+    g.drawHorizontalLine(floor(static_cast<float>(getHeight()) * Y_AXIS_POSITION), 0.f,
+                         static_cast<float>(getRight()));
 
-    // Draw GTC balance
+    if (isTimerRunning()) {
+        // Draw accelY
+        g.setColour(Colours::lightgrey);
+        g.strokePath(generateAccelYPath(), PathStrokeType(2.0f));
+
+        // Mark events
+        markEvents(g);
+
+        // Draw GCT balance
+        displayGctBalance(g);
+    }
 }
 
 juce::Path GaitEventDetectorComponent::generateAccelYPath() {
     // Get the accelerometer data.
-    auto data = imuData.getSamples(200);
+    auto data = imuData.getSamples(PLOT_LOOKBACK);
 
     auto width = static_cast<float>(getWidth());
     auto height = static_cast<float>(getHeight());
-    auto right = static_cast<float>(getRight()) - 5;
+    auto right = static_cast<float>(getRight()) - static_cast<float>(getX());
 
     // Y-axis is in the vertical middle of the component
-    auto yaxis = height * .5f;
-    auto scaling = 20.f;
+    auto yaxis = height * Y_AXIS_POSITION;
 
     // Initialise path
     juce::Path stringPath;
 
     // Start path
-    stringPath.startNewSubPath(right, yaxis - data[0].accelY * scaling);
+    stringPath.startNewSubPath(right, yaxis - data[0].accelY * PLOT_V_SCALING);
     auto N = data.size();
 
     // Visual spacing between points.
@@ -276,7 +283,7 @@ juce::Path GaitEventDetectorComponent::generateAccelYPath() {
     auto x = right - spacing;
 
     for (unsigned long n = 1; n < N; ++n) {
-        auto newY = yaxis - data[n].accelY * scaling;
+        auto newY = yaxis - data[n].accelY * PLOT_V_SCALING;
 
         // Prevent NaN values throwing an exception.
         if (isnan(newY)) {
@@ -290,6 +297,39 @@ juce::Path GaitEventDetectorComponent::generateAccelYPath() {
     return stringPath;
 }
 
+void GaitEventDetectorComponent::markEvents(Graphics &g) {
+    unsigned int z = 0;
+    auto event = gaitEvents.getCurrent();
+    auto width = static_cast<float>(getWidth());
+    auto top = static_cast<float>(getHeight()) * .5f;
+    auto bottom = static_cast<float>(getBottom());
+    auto spacing = width / static_cast<float>(PLOT_LOOKBACK - 1);
+    while (event.type != GaitEventType::Unknown &&
+           static_cast<int>(event.sampleIndex) > static_cast<int>(elapsedSamples) - PLOT_LOOKBACK) {
+        auto x = width - (elapsedSamples - event.sampleIndex) * spacing;
+        auto text = juce::String{event.foot == Foot::Left ? "L" : "R"};
+        switch (event.type) {
+            case GaitEventType::ToeOff:
+                g.setColour(Colours::skyblue);
+                text = "TO-" + text;
+                break;
+            case GaitEventType::InitialContact:
+                g.setColour(Colours::lightgreen);
+                text = "IC-" + text;
+                break;
+            default:
+                break;
+        }
+        g.drawVerticalLine(x, top, bottom);
+        g.drawText(text, x + 3, top + 30, 50, 20, juce::Justification::centredLeft);
+        event = gaitEvents.getPrevious(++z);
+    }
+}
+
+void GaitEventDetectorComponent::displayGctBalance(Graphics &g) {
+
+}
+
 void GaitEventDetectorComponent::resized() {
 }
 
@@ -297,6 +337,17 @@ void GaitEventDetectorComponent::timerCallback() {
     this->repaint();
 }
 
-void GaitEventDetectorComponent::stop() {
+void GaitEventDetectorComponent::stop(bool andReset) {
     stopTimer();
+    if (andReset) {
+        reset();
+    }
+}
+
+float GaitEventDetectorComponent::getCurrentTime() const {
+    return elapsedTimeMs;
+}
+
+int GaitEventDetectorComponent::getElapsedSamples() const {
+    return static_cast<int>(elapsedSamples);
 }

@@ -11,11 +11,8 @@
 */
 class MainComponent : public juce::AudioAppComponent,
                       juce::Button::Listener,
+                      juce::Slider::Listener,
                       juce::HighResolutionTimer {
-public:
-private:
-    void hiResTimerCallback() override;
-
 public:
     enum class PlayState {
         Playing,
@@ -40,6 +37,7 @@ public:
 
 private:
     static constexpr unsigned int TIMER_INCREMENT_MS{1};
+    static constexpr float VIDEO_NUDGE{.2F};
     const juce::NamedValueSet VIDEO_OFFSETS{
             {"Normal_7_5",     31.625},
             {"Normal_10",      32.625},
@@ -51,11 +49,17 @@ private:
             {"Vertical_15",    29.6}
     };
 
+    void hiResTimerCallback() override;
+
     void buttonClicked(Button *button) override;
+
+    void sliderValueChanged(Slider *slider) override;
+
+    void sliderDragEnded(Slider *slider) override;
 
     void switchPlayState(PlayState state);
     //==============================================================================
-    PlayState playState;
+    PlayState playState{PlayState::Stopped};
 
     juce::TextButton openBrowserButton;
     std::unique_ptr<FileChooser> fileChooser;
@@ -63,10 +67,14 @@ private:
     juce::Label selectedFileLabel;
 
     juce::VideoComponent video{false};
+    float videoOffset{0.f};
 
     juce::TextButton playButton;
     juce::TextButton stopButton;
+    juce::Label playbackSpeedLabel;
+    juce::Slider playbackSpeedSlider;
     float imuSampleTimeMs{0.f};
+    float playbackSpeed{1.f};
 
     GaitEventDetectorComponent gaitEventDetector;
 
