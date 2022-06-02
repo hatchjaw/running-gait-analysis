@@ -211,6 +211,7 @@ void GaitEventDetectorComponent::reset() {
     gaitPhase = GaitPhase::Unknown;
     lastLocalMinimum = 0.f;
     gctBalance.set(.5f, true);
+    cadence.set(0.f, true);
     doneProcessing = false;
 }
 
@@ -220,12 +221,10 @@ void GaitEventDetectorComponent::paint(Graphics &g) {
 
     plotAccelerometerData(g);
 
-    auto info = getGroundContactInfo();
-    gctBalance.set(info.balance);
     // List ground contact times
-    displayGctList(g, info);
+    displayGctList(g);
     // Draw GCT balance
-    displayGctBalance(g, info);
+    displayGctBalance(g);
 }
 
 void GaitEventDetectorComponent::plotAccelerometerData(Graphics &g) {
@@ -302,6 +301,8 @@ void GaitEventDetectorComponent::markEvents(Graphics &g) {
                 text = "R";
                 colour = RIGHT_COLOUR;
                 break;
+            case Foot::Unknown:
+                break;
         }
 
         switch (event.type) {
@@ -313,7 +314,7 @@ void GaitEventDetectorComponent::markEvents(Graphics &g) {
                 g.setColour(colour.darker(.2f));
                 text = "IC-" + text;
                 break;
-            default:
+            case GaitEventType::Unknown:
                 break;
         }
         g.drawVerticalLine(x, top, bottom);
@@ -337,7 +338,7 @@ void GaitEventDetectorComponent::markEvents(Graphics &g) {
     }
 }
 
-void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &info) {
+void GaitEventDetectorComponent::displayGctList(Graphics &g) {
     auto x{static_cast<float>(getX())},
             y{10.f},
             h{static_cast<float>(getHeight())},
@@ -357,7 +358,7 @@ void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &
     g.drawHorizontalLine(y, x + padding, x + padding + columnWidth * 2);
     y += 10;
     auto n = 0;
-    for (auto gc: info.groundContacts) {
+    for (auto gc: currentGroundContactInfo.groundContacts) {
         if (gc.foot != Foot::Unknown) {
             g.setColour(gc.foot == Foot::Left ? LEFT_COLOUR : RIGHT_COLOUR);
             g.drawText(juce::String{gc.duration, 2} + " ms",
@@ -371,7 +372,7 @@ void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &
     }
 
     // Display averages
-    if (info.rightAvgMs > 0 && info.leftAvgMs > 0) {
+    if (currentGroundContactInfo.rightAvgMs > 0 && currentGroundContactInfo.leftAvgMs > 0) {
         y = 230.f;
         g.setColour(juce::Colours::grey);
         g.drawHorizontalLine(y, x + padding, x + padding + columnWidth * 2);
@@ -380,17 +381,17 @@ void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &
         g.drawText("Mean", x + padding, y, columnWidth * 2, 20, juce::Justification::centred);
         y += 15;
         g.setColour(LEFT_COLOUR);
-        g.drawText(juce::String{info.leftAvgMs, 2} + " ms",
+        g.drawText(juce::String{currentGroundContactInfo.leftAvgMs, 2} + " ms",
                    x + padding, y, columnWidth, 20,
                    juce::Justification::centred);
         g.setColour(RIGHT_COLOUR);
-        g.drawText(juce::String{info.rightAvgMs, 2} + " ms",
+        g.drawText(juce::String{currentGroundContactInfo.rightAvgMs, 2} + " ms",
                    x + padding + columnWidth, y, columnWidth, 20,
                    juce::Justification::centred);
     }
 }
 
-void GaitEventDetectorComponent::displayGctBalance(Graphics &g, GroundContactInfo &info) {
+void GaitEventDetectorComponent::displayGctBalance(Graphics &g) {
     auto w{static_cast<float>(getWidth())},
             h{static_cast<float>(getHeight())},
             padding{10.f},
@@ -414,12 +415,10 @@ void GaitEventDetectorComponent::displayGctBalance(Graphics &g, GroundContactInf
 
     // Draw a marker to represent the GCT balance
     auto balance = gctBalance.getNext();
-//    if (isTimerRunning()) {
     auto colour = juce::Colours::lightgrey;
-    // Right bias
     if (balance > .51) {
         colour = RIGHT_COLOUR.brighter();
-    } else if (info.balance < .49) {
+    } else if (balance < .49) {
         colour = LEFT_COLOUR.brighter();
     }
     // Outside 'acceptable' range.
@@ -427,10 +426,10 @@ void GaitEventDetectorComponent::displayGctBalance(Graphics &g, GroundContactInf
         colour = colour.withSaturation(1.5);
     }
     g.setColour(colour);
-//    auto markerProportion = 10.f * Utils::clamp(info.balance - .45, 0.f, .1f);
     auto markerProportion = 10.f * Utils::clamp(balance - .45f, 0.f, .1f);
     g.fillRect((indicatorLeft + markerProportion * indicatorWidth) - 2.5f, indicatorVcentre - 30.f, 6.f, 60.f);
 
+    // Display GCT as text
     juce::String foot = balance > .5f ? "R" : balance < .5f ? "L" : "";
     auto balanceToDisplay = 100.f * (fabsf(balance - .5f) + .5f);
     g.setFont(20.f);
@@ -438,12 +437,24 @@ void GaitEventDetectorComponent::displayGctBalance(Graphics &g, GroundContactInf
             juce::String{balanceToDisplay, 2} + "% " + foot,
             indicatorHcentre - 50, indicatorVcentre - 100, 100, 20,
             juce::Justification::centredTop);
-//    }
+
+    // Display cadence.
+    g.setColour(juce::Colours::lightgrey);
+    g.setFont(14.f);
+    if (isTimerRunning()) {
+        g.drawText(
+                "Cadence: " + juce::String{cadence.getNext(), 2} + " steps/min",
+                indicatorRight - 200, 10, 200, 20,
+                juce::Justification::centredRight);
+    }
 }
 
 void GaitEventDetectorComponent::resized() {}
 
 void GaitEventDetectorComponent::timerCallback() {
+    currentGroundContactInfo = getGroundContactInfo();
+    gctBalance.set(currentGroundContactInfo.balance);
+    cadence.set(calculateCadence());
     this->repaint();
 }
 
@@ -478,6 +489,8 @@ GaitEventDetectorComponent::GroundContactInfo GaitEventDetectorComponent::getGro
                     ++nr;
                     tr += gc.duration;
                     break;
+                case Foot::Unknown:
+                    break;
             }
         }
     }
@@ -489,7 +502,7 @@ GaitEventDetectorComponent::GroundContactInfo GaitEventDetectorComponent::getGro
 }
 
 void GaitEventDetectorComponent::setStrideLookback(int numStrides) {
-    strideLookback = numStrides;
+    strideLookback = static_cast<unsigned int>(numStrides);
 }
 
 float GaitEventDetectorComponent::getGtcBalance() {
@@ -498,4 +511,22 @@ float GaitEventDetectorComponent::getGtcBalance() {
 
 float GaitEventDetectorComponent::getCadence() {
     return cadence.getCurrent();
+}
+
+float GaitEventDetectorComponent::calculateCadence() {
+    auto numEvents{0};
+    auto totalTimeMs{0.f};
+    for (auto event: gaitEvents.getSamples(strideLookback * 4)) {
+        if (event.type == GaitEventType::ToeOff) {
+            ++numEvents;
+            totalTimeMs += event.interval;
+        }
+    }
+
+    if (numEvents == 0) {
+        return 0.f;
+    }
+
+    auto mean = (totalTimeMs / static_cast<float>(numEvents));
+    return 60000.f / mean;
 }

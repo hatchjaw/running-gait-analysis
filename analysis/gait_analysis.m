@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Horizontal_7_5;
+capture = captures.Vertical_12_5;
 
 % Sensor to use
 % 1: trunk front
@@ -52,7 +52,7 @@ doPlot = true;
 plotGyro = true;
 plotAccel = true;
 % Number of samples to plot around the current time.
-lookaround = 25;
+lookaround = 75;
 % Minimum time interval between a toe-off and the following initial contact.
 TOICInterval = .075;
 % (Negative) jerk threshold for initial contact detection.
@@ -62,7 +62,7 @@ ICaccelThresh = -1;
 % Based one the above, IC happened this many samples ago:
 IClookbackSamps = 4;
 % Acceleration range in which to detect a stance phase reversal.
-stancePhaseReversalWindow = [-1, -.5];
+stancePhaseReversalWindow = [-1.2, -.5];
 % % Threshold for 'ground truth' IC detection.
 % shankJerkThresh = 350;
 shankAccelThresh = 3;
@@ -77,7 +77,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 0);
+imuStartTime = max(lookaround/Fs, 59);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 

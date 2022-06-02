@@ -104,7 +104,7 @@ private:
     static constexpr unsigned int TRUNK_GYRO_Y_INDEX{11};
     static constexpr unsigned int TRUNK_GYRO_Z_INDEX{13};
     // AccelY must be in this window to detect stance reversal.
-    const std::pair<float, float> STANCE_REVERSAL_WINDOW{-1.f, -.5f};
+    const std::pair<float, float> STANCE_REVERSAL_WINDOW{-1.2f, -.5f};
     // Jerk threshold for initial contact detection.
     static constexpr float IC_JERK_THRESH{-12.5f};
     // Acceleration threshold for initial contact detection.
@@ -135,13 +135,17 @@ private:
 
     void reset();
 
+    void plotAccelerometerData(Graphics &g);
+
     juce::Path generateAccelYPath();
 
     void markEvents(Graphics &g);
 
-    void displayGctList(Graphics &g, GroundContactInfo &info);
+    void displayGctList(Graphics &g);
 
-    void displayGctBalance(Graphics &g, GroundContactInfo &info);
+    void displayGctBalance(Graphics &g);
+
+    float calculateCadence();
 
     juce::File &captureFile;
     std::unique_ptr<juce::FileInputStream> fileStream;
@@ -163,14 +167,12 @@ private:
     GaitEvent lastToeOff;
     GaitEvent lastInitialContact;
     CircularBuffer<GroundContact> groundContacts;
+    GroundContactInfo currentGroundContactInfo;
     SmoothedParameter<float> gctBalance{.5f, .1f};
-    SmoothedParameter<float> cadence{0.f};
+    SmoothedParameter<float> cadence{0.f, .1f};
 
     BiquadFilter gyroFilter{0.002943989366965, 0.005887978733929, 0.002943989366965,
                             1.840758682071433, -0.852534639539291};
-
-
-    void plotAccelerometerData(Graphics &g);
 };
 
 #endif //GAIT_SONIFICATION_GAITEVENTDETECTORCOMPONENT_H
