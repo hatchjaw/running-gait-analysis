@@ -45,7 +45,7 @@ MainComponent::MainComponent() : gaitEventDetector(captureFile) {
     playbackSpeedSlider.addListener(this);
     playbackSpeedSlider.setEnabled(false);
     playbackSpeedSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    playbackSpeedSlider.setNormalisableRange({.1, 2.0, .01});
+    playbackSpeedSlider.setNormalisableRange({.01, 3.0, .01});
     playbackSpeedSlider.setValue(1.0);
     playbackSpeedSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60,
                                         playbackSpeedSlider.getTextBoxHeight());
@@ -214,8 +214,7 @@ void MainComponent::hiResTimerCallback() {
             const MessageManagerLock mmLock;
             repaint();
             if (gaitEventDetector.getElapsedSamples() % 2500 == 0) {
-                auto imuTime = gaitEventDetector.getCurrentTime() * .001;
-                video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
+                syncVideoToIMU();
             }
         }
 
@@ -249,12 +248,22 @@ void MainComponent::switchPlayState(PlayState state) {
     }
 }
 
-void MainComponent::sliderValueChanged(Slider *slider) {}
+void MainComponent::sliderValueChanged(Slider *slider) {
+    if (slider == &strideLookbackSlider) {
+        gaitEventDetector.setStrideLookback(slider->getValue());
+    }
+}
 
 void MainComponent::sliderDragEnded(Slider *slider) {
     if (slider == &playbackSpeedSlider) {
         auto speed = slider->getValue();
         video.setPlaySpeed(speed);
         playbackSpeed = static_cast<float>(speed);
+        syncVideoToIMU();
     }
+}
+
+void MainComponent::syncVideoToIMU() {
+    auto imuTime = gaitEventDetector.getCurrentTime() * .001;
+    video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
 }

@@ -3,6 +3,7 @@
 //
 
 #include "GaitEventDetectorComponent.h"
+#include "Utils.h"
 
 GaitEventDetectorComponent::GaitEventDetectorComponent(File &file) :
         captureFile(file),
@@ -73,8 +74,14 @@ void GaitEventDetectorComponent::processNextSample() {
         auto prevFoot = lastToeOff.foot;
         auto nextFoot = currentGyroY > 0 ? Foot::Left : Foot::Right;
 
+        // ...but try to treat the gyro as authoritative.
         if (nextFoot == prevFoot) {
-            nextFoot = nextFoot == Foot::Left ? Foot::Right : Foot::Left;
+            if (canSwapFeet) {
+                nextFoot = nextFoot == Foot::Left ? Foot::Right : Foot::Left;
+                canSwapFeet = false;
+            } else {
+                canSwapFeet = true;
+            }
         }
 
         auto toeOff = GaitEvent{
@@ -91,82 +98,14 @@ void GaitEventDetectorComponent::processNextSample() {
 
         gaitPhase = GaitPhase::SwingReversal;
 
-        // Toe off marks the end of a ground contact, so register a ground
-        // contact time if possible. Should be greater than zero and (probably)
-        // less than three-quarters of a second.
-        auto groundContactTime = lastToeOff.timeStampMs - lastInitialContact.timeStampMs;
-        if (groundContactTime < MAX_GCT_MS) {
+        // Toe off marks the end of a ground contact. Register a ground contact
+        // if there's a preceding initial contact.
+        if (lastInitialContact.type == GaitEventType::InitialContact) {
+            auto groundContactTime = lastToeOff.timeStampMs - lastInitialContact.timeStampMs;
+//            if (groundContactTime < MAX_GCT_MS) {
             groundContacts.write({lastInitialContact, lastToeOff, groundContactTime, nextFoot});
-
-            auto l{0.f}, r{0.f};
-            // Update GCT balance
-            for (auto gc: groundContacts.getSamples(strideLookback * 2)) {
-                switch (gc.foot) {
-                    case Foot::Left:
-                        l += gc.duration;
-                        break;
-                    case Foot::Right:
-                        r += gc.duration;
-                        break;
-                }
-            }
-
-            l /= l + r;
-            r = 1.f - l;
-            jassert(l <= 1);
+//            }
         }
-//                groundContactTime = TOs(end, 1) - ICs(end, 1);
-//        gtGCT = TOs(end, 1) - gtICs(end, 1);
-//        if groundContactTime > 0 && groundContactTime < .75
-//        GCTs(end+1, :) = [groundContactTime; TOs(end, 3)];
-//        gtGCTs(end+1, :) = [gtGCT, TOs(end, 3)];
-//
-//        % Calculate GTC balance.
-//        if size(GCTs, 1) > 1
-        //        if size(GCTs, 1) > 2*strideLookback-1
-        //        gcts = GCTs(end-(2*strideLookback-1):end, :);
-        //        gtgcts = gtGCTs(end-(2*strideLookback-1):end, :);
-        //        L = mean(gcts(gcts(:, 2) == 1, 1));
-        //        gtL = mean(gtgcts(gtgcts(:, 2) == 1, 1));
-        //        R = mean(gcts(gcts(:, 2) == -1, 1));
-        //        gtR = mean(gtgcts(gtgcts(:, 2) == -1, 1));
-        //        else
-        //        L = mean(GCTs(GCTs(:, 2) == 1, 1));
-        //        gtL = mean(gtGCTs(gtGCTs(:, 2) == 1, 1));
-        //        R = mean(GCTs(GCTs(:, 2) == -1, 1));
-        //        gtR = mean(gtGCTs(gtGCTs(:, 2) == -1, 1));
-        //        end
-//                BL = L/(L+R);
-        //        gtBL = gtL/(gtL+gtR);
-        //        BR = R/(L+R);
-        //        gtBR = gtR/(gtL+gtR);
-        //
-        //        if doPlot
-        //                    subplot(236);
-        //        scatter(BR*100, -.1, 100), ...
-        //        xlim([45, 55]), ...
-        //        ylim([-.5, .5]), ...
-        //        xticks(46:54), ...
-        //        yticks([]), ...
-        //        grid on;
-        //        title("GCT balance, " + num2str(2*strideLookback) + " step average");
-        //        hold on;
-        //        text(50, -.2, ...
-        //        "Trunk only: $" + num2str(BR * 100) + "\%$", ...
-        //        'interpreter', 'latex', ...
-        //        'FontSize', 16 ...
-        //        );
-        //        scatter(gtBR*100,.1, 100);
-        //        text(50, .2, ...
-        //        "Shank ICs: $" + num2str(gtBR * 100) + "\%$", ...
-        //        'interpreter', 'latex', ...
-        //        'FontSize', 16 ...
-        //        );
-        //        xline(50);
-        //        hold off;
-        //        end
-//            end
-//        end
     } else if (isInitialContact(currentAccelY)) {
         auto timestamp = elapsedTimeMs - IC_LOOKBACK_SAMPS * IMU_SAMPLE_PERIOD_MS;
 
@@ -201,10 +140,27 @@ bool GaitEventDetectorComponent::isInflection(std::vector<float> v, InflectionTy
 bool GaitEventDetectorComponent::isToeOff() {
     // Detect toe-off via acceleration local maximum.
     return gaitPhase == GaitPhase::StanceReversal &&
-           isInflection(jerk.getSamples(3), InflectionType::Maximum);
+           isInflection(jerk.getSamples(3), InflectionType::Maximum) &&
+           (elapsedTimeMs - IMU_SAMPLE_PERIOD_MS) - lastInitialContact.timeStampMs > IC_TO_INTERVAL_MS;
 }
 
 bool GaitEventDetectorComponent::isInitialContact(float currentAccelY) {
+//    // Check for basic initial contact criteria -- if no previous TOs or ICs
+//    // have been recorded, this could be the first IC.
+//    bool couldBeInitialContact = elapsedTimeMs > 50.f &&
+//                                 jerk.getCurrent() < IC_JERK_THRESH &&
+//                                 currentAccelY < IC_ACCEL_THRESH;
+//
+//    // If a toe-off or initial-contact has been registered, add the rest of the
+//    // conditions.
+//    if (lastToeOff.type == GaitEventType::ToeOff || lastInitialContact.type == GaitEventType::InitialContact) {
+//        couldBeInitialContact = couldBeInitialContact &&
+//                                gaitPhase == GaitPhase::SwingReversal &&
+//                                (elapsedTimeMs - IMU_SAMPLE_PERIOD_MS) - lastToeOff.timeStampMs > TO_IC_INTERVAL_MS;
+//    }
+//
+//    return couldBeInitialContact;
+
     // Detect initial contact. First high negative jerk event an arbitrary
     // interval after last toe off.
     return (elapsedTimeMs - IMU_SAMPLE_PERIOD_MS) - lastToeOff.timeStampMs > TO_IC_INTERVAL_MS &&
@@ -254,6 +210,7 @@ void GaitEventDetectorComponent::reset() {
     groundContacts.clear();
     gaitPhase = GaitPhase::Unknown;
     lastLocalMinimum = 0.f;
+    gctBalance.set(.5f, true);
     doneProcessing = false;
 }
 
@@ -261,7 +218,19 @@ void GaitEventDetectorComponent::paint(Graphics &g) {
     g.setColour(juce::Colours::grey);
     g.drawRect(getLocalBounds(), 1);   // draw an outline around the component
 
-    g.drawHorizontalLine(floor(static_cast<float>(getHeight()) * Y_AXIS_POSITION), 0.f,
+    plotAccelerometerData(g);
+
+    auto info = getGroundContactInfo();
+    gctBalance.set(info.balance);
+    // List ground contact times
+    displayGctList(g, info);
+    // Draw GCT balance
+    displayGctBalance(g, info);
+}
+
+void GaitEventDetectorComponent::plotAccelerometerData(Graphics &g) {
+    // Draw an x-axis for the plot.
+    g.drawHorizontalLine(floor(static_cast<float>(getHeight()) * ACCEL_PLOT_Y_ZERO_POSITION), 0.f,
                          static_cast<float>(getRight()));
 
     if (isTimerRunning()) {
@@ -271,9 +240,6 @@ void GaitEventDetectorComponent::paint(Graphics &g) {
 
         // Mark events
         markEvents(g);
-
-        // Draw GCT balance
-        displayGctBalance(g);
     }
 }
 
@@ -286,13 +252,13 @@ juce::Path GaitEventDetectorComponent::generateAccelYPath() {
     auto right = static_cast<float>(getRight()) - static_cast<float>(getX());
 
     // Y-axis is in the vertical middle of the component
-    auto yaxis = height * Y_AXIS_POSITION;
+    auto yZero = height * ACCEL_PLOT_Y_ZERO_POSITION;
 
     // Initialise path
     juce::Path stringPath;
 
     // Start path
-    stringPath.startNewSubPath(right, yaxis - data[0].accelY * PLOT_V_SCALING);
+    stringPath.startNewSubPath(right, yZero - data[0].accelY * PLOT_Y_SCALING);
     auto N = data.size();
 
     // Visual spacing between points.
@@ -300,7 +266,7 @@ juce::Path GaitEventDetectorComponent::generateAccelYPath() {
     auto x = right - spacing;
 
     for (unsigned long n = 1; n < N; ++n) {
-        auto newY = yaxis - data[n].accelY * PLOT_V_SCALING;
+        auto newY = yZero - data[n].accelY * PLOT_Y_SCALING;
 
         // Prevent NaN values throwing an exception.
         if (isnan(newY)) {
@@ -371,12 +337,83 @@ void GaitEventDetectorComponent::markEvents(Graphics &g) {
     }
 }
 
-void GaitEventDetectorComponent::displayGctBalance(Graphics &g) {
-
+void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &info) {
+    auto x{static_cast<float>(getX())},
+            y{10.f},
+            h{static_cast<float>(getHeight())},
+            padding{10.f},
+            right{static_cast<float>(getRight())},
+            columnWidth{90.f};
+    // List recent contact times
+    g.setColour(juce::Colours::lightgrey);
+    g.drawText("GCTs", x + padding, y, columnWidth * 2, 20, juce::Justification::centred);
+    y += 20;
+    g.setColour(juce::Colours::skyblue);
+    g.drawText("Left", x + padding, y, columnWidth, 20, juce::Justification::centred);
+    g.setColour(juce::Colours::lightgreen);
+    g.drawText("Right", x + padding + columnWidth, y, columnWidth, 20, juce::Justification::centred);
+    y += 20;
+    g.setColour(juce::Colours::grey);
+    g.drawHorizontalLine(y, x + padding, x + padding + columnWidth * 2);
+    y += 10;
+    auto n = 0;
+    for (auto gc: info.groundContacts) {
+        if (gc.foot != Foot::Unknown) {
+            g.setColour(gc.foot == Foot::Left ? juce::Colours::skyblue : juce::Colours::lightgreen);
+            g.drawText(juce::String{gc.duration, 2} + " ms",
+                       x + 10 + (gc.foot == Foot::Left ? 0.f : columnWidth),
+                       y,
+                       columnWidth,
+                       20,
+                       juce::Justification::centred);
+            y += ++n % 2 == 0 ? 15 : 0;
+        }
+    }
 }
 
-void GaitEventDetectorComponent::resized() {
+void GaitEventDetectorComponent::displayGctBalance(Graphics &g, GroundContactInfo &info) {
+    auto w{static_cast<float>(getWidth())},
+            h{static_cast<float>(getHeight())},
+            padding{10.f},
+            right{static_cast<float>(getRight())},
+            indicatorLeft{225.f},
+            indicatorWidth{right - indicatorLeft - 2.f * padding},
+            indicatorRight{indicatorLeft + indicatorWidth},
+            indicatorVcentre{floor(h * .25f)},
+            indicatorHcentre{indicatorLeft + indicatorWidth * .5f};
+
+    // Draw line to represent 55L, 50:50, and 55R, plus a y-axis.
+    g.setColour(juce::Colours::grey);
+    g.drawHorizontalLine(indicatorVcentre, indicatorLeft, indicatorRight);
+    g.drawVerticalLine(indicatorLeft, indicatorVcentre - 30, indicatorVcentre + 30);
+    g.drawVerticalLine(indicatorHcentre, indicatorVcentre - 40, indicatorVcentre + 40);
+    g.drawVerticalLine(indicatorRight, indicatorVcentre - 30, indicatorVcentre + 30);
+    g.setFont(10.);
+    g.drawText("50%", indicatorHcentre - 20, indicatorVcentre - 50, 40, 10, juce::Justification::centredTop);
+    g.drawText("55% L", indicatorLeft - 20, indicatorVcentre - 40, 40, 10, juce::Justification::centredTop);
+    g.drawText("55% R", indicatorRight - 20, indicatorVcentre - 40, 40, 10, juce::Justification::centredTop);
+
+    // Draw a marker to represent the GCT balance
+//    if (isTimerRunning()) {
+    auto colour = juce::Colours::lightgrey;
+    // Right bias
+    if (info.balance > .51) {
+        colour = juce::Colours::lightgreen.brighter();
+    } else if (info.balance < .49) {
+        colour = juce::Colours::skyblue.brighter();
+    }
+    // Outside 'acceptable' range.
+    if (info.balance > .515 || info.balance < .485) {
+        colour = colour.withSaturation(1.5);
+    }
+    g.setColour(colour);
+//    auto markerProportion = 10.f * Utils::clamp(info.balance - .45, 0.f, .1f);
+    auto markerProportion = 10.f * Utils::clamp(gctBalance.getNext() - .45, 0.f, .1f);
+    g.fillRect((indicatorLeft + markerProportion * indicatorWidth) - 2.5f, indicatorVcentre - 30.f, 6.f, 60.f);
+//    }
 }
+
+void GaitEventDetectorComponent::resized() {}
 
 void GaitEventDetectorComponent::timerCallback() {
     this->repaint();
@@ -395,4 +432,34 @@ float GaitEventDetectorComponent::getCurrentTime() const {
 
 int GaitEventDetectorComponent::getElapsedSamples() const {
     return static_cast<int>(elapsedSamples);
+}
+
+GaitEventDetectorComponent::GroundContactInfo GaitEventDetectorComponent::getGroundContactInfo() {
+    auto nl{0}, nr{0};
+    auto tl{0.f}, tr{0.f};
+    auto gcs = groundContacts.getSamples(strideLookback * 2);
+    // Update GCT balance
+    for (auto gc: gcs) {
+        if (gc.duration > 0) {
+            switch (gc.foot) {
+                case Foot::Left:
+                    ++nl;
+                    tl += gc.duration;
+                    break;
+                case Foot::Right:
+                    ++nr;
+                    tr += gc.duration;
+                    break;
+            }
+        }
+    }
+
+    tl = nl == 0 ? 0 : tl / nl;
+    tr = nr == 0 ? 0 : tr / nr;
+
+    return {gcs, tl, tr, tl == 0 || tr == 0 ? .5f : tr / (tl + tr)};
+}
+
+void GaitEventDetectorComponent::setStrideLookback(int numStrides) {
+    strideLookback = numStrides;
 }

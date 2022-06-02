@@ -8,6 +8,7 @@
 #include <JuceHeader.h>
 #include "CircularBuffer.h"
 #include "BiquadFilter.h"
+#include "SmoothedParameter.h"
 
 class GaitEventDetectorComponent : public juce::Component, juce::Timer {
 
@@ -50,6 +51,13 @@ public:
         Foot foot;
     };
 
+    struct GroundContactInfo {
+        std::vector<GroundContact> groundContacts;
+        float leftAvgMs;
+        float rightAvgMs;
+        float balance;
+    };
+
     explicit GaitEventDetectorComponent(juce::File &file);
 
     bool prepareToProcess();
@@ -66,9 +74,13 @@ public:
 
     int getElapsedSamples() const;
 
+    GroundContactInfo getGroundContactInfo();
+
     void paint(Graphics &g) override;
 
     void resized() override;
+
+    void setStrideLookback(int numStrides);
 
 private:
     enum class InflectionType {
@@ -95,12 +107,14 @@ private:
     static constexpr float IC_ACCEL_THRESH{-1.f};
     // Minimum time interval between a toe-off and the following initial contact.
     static constexpr float TO_IC_INTERVAL_MS{75.f};
+    // Minimum time interval between an initial contact and the following toe-off.
+    static constexpr float IC_TO_INTERVAL_MS{125.f};
     // Based one the above, initial contact happened this many samples ago:
     static constexpr int IC_LOOKBACK_SAMPS = 4;
     // The number of samples to plot, and to inspect for events to plot.
     static constexpr int PLOT_LOOKBACK = 150;
-    static constexpr float PLOT_V_SCALING = 30.f;
-    static constexpr float Y_AXIS_POSITION = .66f;
+    static constexpr float PLOT_Y_SCALING = 30.f;
+    static constexpr float ACCEL_PLOT_Y_ZERO_POSITION = .66f;
     // Ground contact probably won't exceed this duration.
     static constexpr float MAX_GCT_MS = 750;
 
@@ -118,7 +132,9 @@ private:
 
     void markEvents(Graphics &g);
 
-    void displayGctBalance(Graphics &g);
+    void displayGctList(Graphics &g, GroundContactInfo &info);
+
+    void displayGctBalance(Graphics &g, GroundContactInfo &info);
 
     juce::File &captureFile;
     std::unique_ptr<juce::FileInputStream> fileStream;
@@ -128,15 +144,19 @@ private:
     CircularBuffer<ImuSample> imuData;
     CircularBuffer<float> jerk;
     CircularBuffer<GaitEvent> gaitEvents;
+    bool canSwapFeet{true};
     GaitEvent lastToeOff;
     GaitEvent lastInitialContact;
     CircularBuffer<GroundContact> groundContacts;
+    SmoothedParameter<float> gctBalance{.5, .1f};
     unsigned int strideLookback{4};
     GaitPhase gaitPhase{GaitPhase::Unknown};
     float lastLocalMinimum{0.f};
     BiquadFilter gyroFilter{0.002943989366965, 0.005887978733929, 0.002943989366965,
                             1.840758682071433, -0.852534639539291};
-};
 
+
+    void plotAccelerometerData(Graphics &g);
+};
 
 #endif //GAIT_SONIFICATION_GAITEVENTDETECTORCOMPONENT_H

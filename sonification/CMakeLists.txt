@@ -65,7 +65,9 @@ target_sources(GaitSonification
         Source/MainComponent.cpp
         Source/GaitEventDetectorComponent.cpp
         Source/CircularBuffer.cpp
-        Source/BiquadFilter.cpp)
+        Source/BiquadFilter.cpp
+        Source/Utils.cpp
+        Source/SmoothedParameter.cpp)
 
 # `target_compile_definitions` adds some preprocessor definitions to our target. In a Projucer
 # project, these might be passed in the 'Preprocessor Definitions' field. JUCE modules also make use

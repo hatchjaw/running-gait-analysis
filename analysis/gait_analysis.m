@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Normal_15;
+capture = captures.Horizontal_7_5;
 
 % Sensor to use
 % 1: trunk front
@@ -47,12 +47,12 @@ gyroID = 'TrignoIMSensor%1$d_Gyro%1$d_%2$c_IM__deg_sec_';
 %% Video + accelY + gyroY
 close all;
 
-doVideo = false;
-doPlot = false;
-plotGyro = false;
+doVideo = true;
+doPlot = true;
+plotGyro = true;
 plotAccel = true;
 % Number of samples to plot around the current time.
-lookaround = 75;
+lookaround = 25;
 % Minimum time interval between a toe-off and the following initial contact.
 TOICInterval = .075;
 % (Negative) jerk threshold for initial contact detection.
@@ -77,7 +77,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 23);
+imuStartTime = max(lookaround/Fs, 0);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 
