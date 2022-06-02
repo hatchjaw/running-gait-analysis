@@ -47,9 +47,21 @@ MainComponent::MainComponent() : gaitEventDetector(captureFile) {
     playbackSpeedSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     playbackSpeedSlider.setNormalisableRange({.1, 2.0, .01});
     playbackSpeedSlider.setValue(1.0);
-    playbackSpeedSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, playbackSpeedSlider.getTextBoxWidth(),
+    playbackSpeedSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60,
                                         playbackSpeedSlider.getTextBoxHeight());
     playbackSpeedSlider.setTextValueSuffix("x");
+
+    addAndMakeVisible(strideLookbackLabel);
+    strideLookbackLabel.attachToComponent(&strideLookbackSlider, true);
+    strideLookbackLabel.setText("#stride average", juce::dontSendNotification);
+
+    addAndMakeVisible(strideLookbackSlider);
+    strideLookbackSlider.addListener(this);
+    strideLookbackSlider.setSliderStyle(juce::Slider::IncDecButtons);
+    strideLookbackSlider.setNormalisableRange({1, 10, 1});
+    strideLookbackSlider.setValue(4);
+    strideLookbackSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, true, 40,
+                                         strideLookbackSlider.getTextBoxHeight());
 
     addChildComponent(video);
 
@@ -98,6 +110,8 @@ void MainComponent::paint(juce::Graphics &g) {
     g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
 
     auto bounds = getLocalBounds();
+    auto font = juce::Font{};
+    g.setFont(juce::Font{"Monaco", 12.f, juce::Font::plain});
     g.setColour(Colours::pink);
     g.drawText("Video: " + juce::String(video.getPlayPosition()), bounds.getRight() - 100, bounds.getBottom() - 50,
                100,
@@ -122,10 +136,14 @@ void MainComponent::resized() {
     selectedFileLabel.setBounds(openBrowserButton.getRight(), bounds.getY() + padding, 200, 30);
     playButton.setBounds(bounds.getX() + padding, openBrowserButton.getBottom() + padding, 100, 30);
     stopButton.setBounds(playButton.getRight() + padding, openBrowserButton.getBottom() + padding, 100, 30);
-    playbackSpeedSlider.setBounds(stopButton.getRight() + 150,
+    playbackSpeedSlider.setBounds(stopButton.getRight() + 140,
                                   openBrowserButton.getBottom() + padding,
-                                  250,
+                                  225,
                                   30);
+    strideLookbackSlider.setBounds(playbackSpeedSlider.getRight() + 120,
+                                   openBrowserButton.getBottom() + padding,
+                                   125,
+                                   30);
     video.setBounds(bounds.getRight() - videoWidth - padding, playButton.getBottom() + 20, videoWidth, 640);
     gaitEventDetector.setBounds(bounds.getX() + padding,
                                 playButton.getBottom() + 20,
@@ -222,9 +240,10 @@ void MainComponent::switchPlayState(PlayState state) {
             stopTimer();
             gaitEventDetector.stop(true);
             video.stop();
-            videoOffset = VIDEO_OFFSETS.getWithDefault(
-                    captureFile.getFileNameWithoutExtension(), 30.0
-            );
+            videoOffset = 0.0;
+            if (captureFile.existsAsFile()) {
+                videoOffset = VIDEO_OFFSETS.getWithDefault(captureFile.getFileNameWithoutExtension(), 30.0);
+            }
             video.setPlayPosition(videoOffset);
             break;
     }

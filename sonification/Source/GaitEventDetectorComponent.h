@@ -34,20 +34,6 @@ public:
         InitialContact
     };
 
-    enum class InflectionType {
-        Minimum,
-        Maximum
-    };
-
-    struct ImuSample {
-        float accelY, gyroY;
-    };
-
-    struct GroundContact {
-        float duration;
-        Foot foot;
-    };
-
     struct GaitEvent {
         GaitEventType type;
         Foot foot;
@@ -57,29 +43,43 @@ public:
         float interval;
     };
 
+    struct GroundContact {
+        GaitEvent initialContact;
+        GaitEvent toeOff;
+        float duration;
+        Foot foot;
+    };
+
     explicit GaitEventDetectorComponent(juce::File &file);
 
     bool prepareToProcess();
 
-    void advanceClock(float ms);
-
     void processNextSample();
 
-    bool isDoneProcessing() const;
-
-    void paint(Graphics &g) override;
-
-    void resized() override;
+    void stop(bool andReset = false);
 
     void timerCallback() override;
 
-    void stop(bool andReset = false);
+    bool isDoneProcessing() const;
 
     float getCurrentTime() const;
 
     int getElapsedSamples() const;
 
+    void paint(Graphics &g) override;
+
+    void resized() override;
+
 private:
+    enum class InflectionType {
+        Minimum,
+        Maximum
+    };
+
+    struct ImuSample {
+        float accelY, gyroY;
+    };
+
     static constexpr unsigned int NUM_HEADER_LINES{215};
     static constexpr unsigned int TRUNK_ACCEL_X_INDEX{3};
     static constexpr unsigned int TRUNK_ACCEL_Y_INDEX{5};
@@ -101,14 +101,24 @@ private:
     static constexpr int PLOT_LOOKBACK = 150;
     static constexpr float PLOT_V_SCALING = 30.f;
     static constexpr float Y_AXIS_POSITION = .66f;
+    // Ground contact probably won't exceed this duration.
+    static constexpr float MAX_GCT_MS = 750;
 
     void parseImuLine();
 
     static bool isInflection(std::vector<float> v, InflectionType type);
+
     bool isToeOff();
+
     bool isInitialContact(float currentAccelY);
+
     void reset();
+
     juce::Path generateAccelYPath();
+
+    void markEvents(Graphics &g);
+
+    void displayGctBalance(Graphics &g);
 
     juce::File &captureFile;
     std::unique_ptr<juce::FileInputStream> fileStream;
@@ -121,13 +131,11 @@ private:
     GaitEvent lastToeOff;
     GaitEvent lastInitialContact;
     CircularBuffer<GroundContact> groundContacts;
+    unsigned int strideLookback{4};
     GaitPhase gaitPhase{GaitPhase::Unknown};
     float lastLocalMinimum{0.f};
-    BiquadFilter gyroFilter{0.002943989366965, 0.005887978733929, 0.002943989366965, 1.840758682071433, -0.852534639539291};
-
-    void markEvents(Graphics &g);
-
-    void displayGctBalance(Graphics &g);
+    BiquadFilter gyroFilter{0.002943989366965, 0.005887978733929, 0.002943989366965,
+                            1.840758682071433, -0.852534639539291};
 };
 
 

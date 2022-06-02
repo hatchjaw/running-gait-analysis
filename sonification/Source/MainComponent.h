@@ -75,6 +75,8 @@ private:
     juce::Slider playbackSpeedSlider;
     float imuSampleTimeMs{0.f};
     float playbackSpeed{1.f};
+    juce::Label strideLookbackLabel;
+    juce::Slider strideLookbackSlider;
 
     GaitEventDetectorComponent gaitEventDetector;
 
