@@ -82,6 +82,10 @@ public:
 
     void setStrideLookback(int numStrides);
 
+    float getGtcBalance();
+
+    float getCadence();
+
 private:
     enum class InflectionType {
         Minimum,
@@ -110,13 +114,16 @@ private:
     // Minimum time interval between an initial contact and the following toe-off.
     static constexpr float IC_TO_INTERVAL_MS{125.f};
     // Based one the above, initial contact happened this many samples ago:
-    static constexpr int IC_LOOKBACK_SAMPS = 4;
+    static constexpr int IC_LOOKBACK_SAMPS{4};
     // The number of samples to plot, and to inspect for events to plot.
-    static constexpr int PLOT_LOOKBACK = 150;
-    static constexpr float PLOT_Y_SCALING = 30.f;
-    static constexpr float ACCEL_PLOT_Y_ZERO_POSITION = .66f;
+    static constexpr int PLOT_LOOKBACK{150};
+    static constexpr float PLOT_Y_SCALING{30.f};
+    static constexpr float ACCEL_PLOT_Y_ZERO_POSITION{.66f};
     // Ground contact probably won't exceed this duration.
-    static constexpr float MAX_GCT_MS = 750;
+    static constexpr float MAX_GCT_MS{750};
+
+    const juce::Colour LEFT_COLOUR{juce::Colours::skyblue};
+    const juce::Colour RIGHT_COLOUR{juce::Colours::palegoldenrod};
 
     void parseImuLine();
 
@@ -138,20 +145,27 @@ private:
 
     juce::File &captureFile;
     std::unique_ptr<juce::FileInputStream> fileStream;
+
     bool doneProcessing{false};
     float elapsedTimeMs{0};
     unsigned int elapsedSamples{0};
+
     CircularBuffer<ImuSample> imuData;
     CircularBuffer<float> jerk;
+
+    unsigned int strideLookback{4};
+
+    GaitPhase gaitPhase{GaitPhase::Unknown};
+    float lastLocalMinimum{0.f};
+
     CircularBuffer<GaitEvent> gaitEvents;
     bool canSwapFeet{true};
     GaitEvent lastToeOff;
     GaitEvent lastInitialContact;
     CircularBuffer<GroundContact> groundContacts;
-    SmoothedParameter<float> gctBalance{.5, .1f};
-    unsigned int strideLookback{4};
-    GaitPhase gaitPhase{GaitPhase::Unknown};
-    float lastLocalMinimum{0.f};
+    SmoothedParameter<float> gctBalance{.5f, .1f};
+    SmoothedParameter<float> cadence{0.f};
+
     BiquadFilter gyroFilter{0.002943989366965, 0.005887978733929, 0.002943989366965,
                             1.840758682071433, -0.852534639539291};
 

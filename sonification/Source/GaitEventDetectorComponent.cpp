@@ -296,11 +296,11 @@ void GaitEventDetectorComponent::markEvents(Graphics &g) {
         switch (event.foot) {
             case Foot::Left:
                 text = "L";
-                colour = Colours::skyblue;
+                colour = LEFT_COLOUR;
                 break;
             case Foot::Right:
                 text = "R";
-                colour = Colours::lightgreen;
+                colour = RIGHT_COLOUR;
                 break;
         }
 
@@ -330,7 +330,7 @@ void GaitEventDetectorComponent::markEvents(Graphics &g) {
         auto w = std::max(0.f, width - x - (elapsedSamples - gc.toeOff.sampleIndex) * spacing);
         g.setColour(juce::Colours::white.withAlpha(.025f));
         g.fillRect(x, top, w, bottom - top);
-        g.setColour(gc.foot == Foot::Left ? juce::Colours::skyblue : juce::Colours::lightgreen);
+        g.setColour(gc.foot == Foot::Left ? LEFT_COLOUR : RIGHT_COLOUR);
         g.drawText(juce::String{gc.duration} + " ms",
                    x, top + 10, w, 20, juce::Justification::centredRight);
         gc = groundContacts.getPrevious(++z);
@@ -348,9 +348,9 @@ void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &
     g.setColour(juce::Colours::lightgrey);
     g.drawText("GCTs", x + padding, y, columnWidth * 2, 20, juce::Justification::centred);
     y += 20;
-    g.setColour(juce::Colours::skyblue);
+    g.setColour(LEFT_COLOUR);
     g.drawText("Left", x + padding, y, columnWidth, 20, juce::Justification::centred);
-    g.setColour(juce::Colours::lightgreen);
+    g.setColour(RIGHT_COLOUR);
     g.drawText("Right", x + padding + columnWidth, y, columnWidth, 20, juce::Justification::centred);
     y += 20;
     g.setColour(juce::Colours::grey);
@@ -359,7 +359,7 @@ void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &
     auto n = 0;
     for (auto gc: info.groundContacts) {
         if (gc.foot != Foot::Unknown) {
-            g.setColour(gc.foot == Foot::Left ? juce::Colours::skyblue : juce::Colours::lightgreen);
+            g.setColour(gc.foot == Foot::Left ? LEFT_COLOUR : RIGHT_COLOUR);
             g.drawText(juce::String{gc.duration, 2} + " ms",
                        x + 10 + (gc.foot == Foot::Left ? 0.f : columnWidth),
                        y,
@@ -368,6 +368,25 @@ void GaitEventDetectorComponent::displayGctList(Graphics &g, GroundContactInfo &
                        juce::Justification::centred);
             y += ++n % 2 == 0 ? 15 : 0;
         }
+    }
+
+    // Display averages
+    if (info.rightAvgMs > 0 && info.leftAvgMs > 0) {
+        y = 230.f;
+        g.setColour(juce::Colours::grey);
+        g.drawHorizontalLine(y, x + padding, x + padding + columnWidth * 2);
+        y += 10;
+        g.setColour(juce::Colours::lightgrey);
+        g.drawText("Mean", x + padding, y, columnWidth * 2, 20, juce::Justification::centred);
+        y += 15;
+        g.setColour(LEFT_COLOUR);
+        g.drawText(juce::String{info.leftAvgMs, 2} + " ms",
+                   x + padding, y, columnWidth, 20,
+                   juce::Justification::centred);
+        g.setColour(RIGHT_COLOUR);
+        g.drawText(juce::String{info.rightAvgMs, 2} + " ms",
+                   x + padding + columnWidth, y, columnWidth, 20,
+                   juce::Justification::centred);
     }
 }
 
@@ -394,22 +413,31 @@ void GaitEventDetectorComponent::displayGctBalance(Graphics &g, GroundContactInf
     g.drawText("55% R", indicatorRight - 20, indicatorVcentre - 40, 40, 10, juce::Justification::centredTop);
 
     // Draw a marker to represent the GCT balance
+    auto balance = gctBalance.getNext();
 //    if (isTimerRunning()) {
     auto colour = juce::Colours::lightgrey;
     // Right bias
-    if (info.balance > .51) {
-        colour = juce::Colours::lightgreen.brighter();
+    if (balance > .51) {
+        colour = RIGHT_COLOUR.brighter();
     } else if (info.balance < .49) {
-        colour = juce::Colours::skyblue.brighter();
+        colour = LEFT_COLOUR.brighter();
     }
     // Outside 'acceptable' range.
-    if (info.balance > .515 || info.balance < .485) {
+    if (balance > .515 || balance < .485) {
         colour = colour.withSaturation(1.5);
     }
     g.setColour(colour);
 //    auto markerProportion = 10.f * Utils::clamp(info.balance - .45, 0.f, .1f);
-    auto markerProportion = 10.f * Utils::clamp(gctBalance.getNext() - .45, 0.f, .1f);
+    auto markerProportion = 10.f * Utils::clamp(balance - .45f, 0.f, .1f);
     g.fillRect((indicatorLeft + markerProportion * indicatorWidth) - 2.5f, indicatorVcentre - 30.f, 6.f, 60.f);
+
+    juce::String foot = balance > .5f ? "R" : balance < .5f ? "L" : "";
+    auto balanceToDisplay = 100.f * (fabsf(balance - .5f) + .5f);
+    g.setFont(20.f);
+    g.drawText(
+            juce::String{balanceToDisplay, 2} + "% " + foot,
+            indicatorHcentre - 50, indicatorVcentre - 100, 100, 20,
+            juce::Justification::centredTop);
 //    }
 }
 
@@ -462,4 +490,12 @@ GaitEventDetectorComponent::GroundContactInfo GaitEventDetectorComponent::getGro
 
 void GaitEventDetectorComponent::setStrideLookback(int numStrides) {
     strideLookback = numStrides;
+}
+
+float GaitEventDetectorComponent::getGtcBalance() {
+    return gctBalance.getCurrent();
+}
+
+float GaitEventDetectorComponent::getCadence() {
+    return cadence.getCurrent();
 }

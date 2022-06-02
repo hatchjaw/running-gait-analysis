@@ -160,6 +160,8 @@ if doPlot || doVideo
     figure('Position', [100, 100, 1500, 750], 'Name', capture.name);
 end
 
+canSwapFeet = true;
+
 for n=1:length(Timu)-imuNOffset-lookaround
 % for n=1:1000
     if doVideo
@@ -206,7 +208,12 @@ for n=1:length(Timu)-imuNOffset-lookaround
         prevFoot = TOs(end, 3);
         nextFoot = sign(gyroYFiltered(Nimu(imuCurrentN-1)));
         if nextFoot == prevFoot
-            nextFoot = -nextFoot;
+            if canSwapFeet
+                nextFoot = -nextFoot;
+                canSwapFeet = false;
+            else
+                canSwapFeet = true;
+            end
         end
         TOs(end+1, :) = [...
             Timu(imuCurrentN-1); ...
