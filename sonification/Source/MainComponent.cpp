@@ -1,7 +1,9 @@
 #include "MainComponent.h"
+#include "Utils.h"
 
 //==============================================================================
-MainComponent::MainComponent() : gaitEventDetector(captureFile) {
+MainComponent::MainComponent() :
+        gaitEventDetector(captureFile) {
     // Make sure you set the size of the component after
     // you add any child components.
     setSize(1000, 800);
@@ -10,10 +12,12 @@ MainComponent::MainComponent() : gaitEventDetector(captureFile) {
     if (juce::RuntimePermissions::isRequired(juce::RuntimePermissions::recordAudio)
         && !juce::RuntimePermissions::isGranted(juce::RuntimePermissions::recordAudio)) {
         juce::RuntimePermissions::request(juce::RuntimePermissions::recordAudio,
-                                          [&](bool granted) { setAudioChannels(granted ? 2 : 0, 2); });
+                                          [&](bool granted) {
+                                              setAudioChannels(granted ? 2 : 0, NUM_OUTPUT_CHANNELS);
+                                          });
     } else {
         // Specify the number of input and output channels that we want to open
-        setAudioChannels(2, 2);
+        setAudioChannels(2, NUM_OUTPUT_CHANNELS);
     }
 
     fileChooser = std::make_unique<FileChooser>("Select a capture file",
@@ -66,6 +70,10 @@ MainComponent::MainComponent() : gaitEventDetector(captureFile) {
     addChildComponent(video);
 
     addAndMakeVisible(gaitEventDetector);
+
+    addAndMakeVisible(optionsButton);
+    optionsButton.setButtonText("Options");
+    optionsButton.addListener(this);
 }
 
 MainComponent::~MainComponent() {
@@ -74,6 +82,9 @@ MainComponent::~MainComponent() {
     openBrowserButton.removeListener(this);
     playButton.removeListener(this);
     stopButton.removeListener(this);
+    optionsButton.removeListener(this);
+    playbackSpeedSlider.removeListener(this);
+    strideLookbackSlider.removeListener(this);
 }
 
 //==============================================================================
@@ -85,16 +96,59 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     // but be careful - it will be called on the audio thread, not the GUI thread.
 
     // For more details, see the help for AudioProcessor::prepareToPlay()
+    auto spec = juce::dsp::ProcessSpec{sampleRate, static_cast<uint32>(samplesPerBlockExpected), NUM_OUTPUT_CHANNELS};
+    panner.setRule(juce::dsp::PannerRule::linear);
+    panner.prepare(spec);
+
+    reverb.prepare(spec);
+    reverb.setParameters(juce::Reverb::Parameters{.5f, .25f, 0.f, 1.f, .5f});
+
+    gain.prepare(spec);
+    gain.setGainLinear(.5);
+
+    auto params = FMSynth::Parameters{
+            FMOsc::LINEAR,
+            {
+                    FMOsc::Parameters(1.4, 500., 0.1, FMOsc::EXPONENTIAL, nullptr, {
+                            FMOsc::Parameters(1.4, 1.9)
+                    }),
+                    FMOsc::Parameters(1.35, .5)
+            },
+            OADEnv::Parameters(0.f, 0.05f, .2f)
+    };
+
+    FMOsc carrier{params.carrierMode};
+    for (auto s: params.modulatorParameters) {
+        auto m = s.generateOscillator();
+        carrier.addModulator(m);
+    }
+    carrier.setEnvelope(params.envParams);
+    synth.setCarrier(carrier);
+    synth.setModulationAmount(0.f);
+
+    synth.prepareToPlay(sampleRate, samplesPerBlockExpected, NUM_OUTPUT_CHANNELS);
 }
 
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill) {
-    // Your audio-processing code goes here!
+    juce::dsp::AudioBlock<float> block(*bufferToFill.buffer,
+                                       (size_t) bufferToFill.startSample);
+    switch (sonificationMode) {
+        case SonificationMode::SynthConstant:
+        case SonificationMode::SynthRhythmic:
+            bufferToFill.clearActiveBufferRegion();
+            synth.renderNextBlock(*bufferToFill.buffer, 0, bufferToFill.numSamples);
+            break;
+        case SonificationMode::AudioFile:
+            inputSource->getNextAudioBlock(bufferToFill);
+            ScopedLock audioLock(audioCallbackLock);
+//            this->process (juce::dsp::ProcessContextReplacing<float> (block));
+            break;
+    }
 
-    // For more details, see the help for AudioProcessor::getNextAudioBlock()
-
-    // Right now we are not producing any data, in which case we need to clear the buffer
-    // (to prevent the output of random noise)
-    bufferToFill.clearActiveBufferRegion();
+    auto context = juce::dsp::ProcessContextReplacing<float>(block);
+    reverb.process(context);
+    panner.process(context);
+    gain.process(context);
 }
 
 void MainComponent::releaseResources() {
@@ -149,10 +203,13 @@ void MainComponent::resized() {
                                 playButton.getBottom() + 20,
                                 bounds.getWidth() - videoWidth - padding * 2,
                                 video.getHeight());
+    optionsButton.setBounds(bounds.getRight() - 60, padding * 2, 50, 20);
 }
 
 void MainComponent::buttonClicked(Button *button) {
-    if (button == &openBrowserButton) {
+    if (button == &optionsButton) {
+        showOptions();
+    } else if (button == &openBrowserButton) {
         switchPlayState(PlayState::Stopped);
         fileChooser->launchAsync(
                 FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
@@ -197,6 +254,38 @@ void MainComponent::buttonClicked(Button *button) {
     }
 }
 
+void MainComponent::showOptions() {
+    DialogWindow::LaunchOptions options;
+    auto deviceSelector = new AudioDeviceSelectorComponent(
+            deviceManager,
+            0,     // minimum input channels
+            256,   // maximum input channels
+            0,     // minimum output channels
+            256,   // maximum output channels
+            false, // ability to select midi inputs
+            false, // ability to select midi output device
+            true, // treat channels as stereo pairs
+            false // hide advanced options
+    );
+
+    options.content.setOwned(deviceSelector);
+
+    Rectangle<int> area(0, 0, 400, 300);
+
+    options.content->setSize(area.getWidth(), area.getHeight());
+
+    options.dialogTitle = "Audio Settings";
+    options.dialogBackgroundColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = false;
+
+    dialogWindow = options.launchAsync();
+
+    if (dialogWindow != nullptr)
+        dialogWindow->centreWithSize(400, 300);
+}
+
 void MainComponent::hiResTimerCallback() {
     if (!video.isPlaying()) {
         gaitEventDetector.stop();
@@ -209,7 +298,7 @@ void MainComponent::hiResTimerCallback() {
             return;
         }
 
-//        // Try to keep the video in sync.
+        // Try to keep the video in sync.
         if (gaitEventDetector.getElapsedSamples() % 10 == 0) {
             const MessageManagerLock mmLock;
             repaint();
@@ -217,6 +306,8 @@ void MainComponent::hiResTimerCallback() {
                 syncVideoToIMU();
             }
         }
+
+        updateSonification();
 
         imuSampleTimeMs -= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS;
     }
@@ -231,6 +322,7 @@ void MainComponent::switchPlayState(PlayState state) {
             stopButton.setEnabled(true);
             imuSampleTimeMs = 0.f;
             startTimer(TIMER_INCREMENT_MS);
+            video.setAudioVolume(0.25f);
             video.play();
             break;
         case PlayState::Stopped:
@@ -244,6 +336,8 @@ void MainComponent::switchPlayState(PlayState state) {
                 videoOffset = VIDEO_OFFSETS.getWithDefault(captureFile.getFileNameWithoutExtension(), 30.0);
             }
             video.setPlayPosition(videoOffset);
+            synth.stopPlaying();
+            synth.setModulationAmount(0.f);
             break;
     }
 }
@@ -266,4 +360,43 @@ void MainComponent::sliderDragEnded(Slider *slider) {
 void MainComponent::syncVideoToIMU() {
     auto imuTime = gaitEventDetector.getCurrentTime() * .001;
     video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
+}
+
+void MainComponent::updateSonification() {
+    // Raw GCT balance, 0 (L) to 1 (R)
+    auto balance = gaitEventDetector.getGtcBalance();
+    // Asymmetry -50 - +50
+    auto asymmetryPct = 100.f * (balance - .5f);
+    // Absolute (polarisation-independent) asymmetry
+    auto absAsymmetry = fabsf(asymmetryPct);
+
+    switch (sonificationMode) {
+        case SonificationMode::SynthConstant:
+            break;
+        case SonificationMode::SynthRhythmic: {
+            auto freq = 200.f + gaitEventDetector.getCadence() * 2.f;
+            auto amp = .5f;
+            // Check for new note
+            if (gaitEventDetector.hasEventNow(GaitEventDetectorComponent::GaitEventType::ToeOff)) {
+                synth.startNote(freq, amp);
+            }
+
+            synth.setCarrierFrequency(200.f + gaitEventDetector.getCadence() * 2.f);
+
+            auto modAmount = 2.5f * Utils::clamp(absAsymmetry - .75f, 0.f, 100.f);
+            synth.setModulationAmount(modAmount);
+            break;
+        }
+        case SonificationMode::AudioFile:
+            break;
+    }
+
+    auto pan = asymmetryPct * .25f;
+    panner.setPan(Utils::clamp(pan, -1.f, 1.f));
+
+    auto reverbParams = reverb.getParameters();
+    auto reverbAmount = Utils::clamp(absAsymmetry - 2.5f, 0.f, 100.f);
+    reverbParams.wetLevel = reverbAmount;
+    reverbParams.dryLevel = 1.f - reverbAmount;
+    reverb.setParameters(reverbParams);
 }

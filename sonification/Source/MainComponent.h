@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <juce_video/playback/juce_VideoComponent.h>
 #include "GaitEventDetectorComponent.h"
+#include "Synthesis/FMSynth.h"
 
 //==============================================================================
 /*
@@ -14,10 +15,19 @@ class MainComponent : public juce::AudioAppComponent,
                       juce::Slider::Listener,
                       juce::HighResolutionTimer {
 public:
+    static constexpr int NUM_OUTPUT_CHANNELS{2};
+
     enum class PlayState {
         Playing,
         Stopped
     };
+
+    enum class SonificationMode {
+        SynthConstant,
+        SynthRhythmic,
+        AudioFile
+    };
+
     //==============================================================================
     MainComponent();
 
@@ -78,9 +88,24 @@ private:
     juce::Label strideLookbackLabel;
     juce::Slider strideLookbackSlider;
 
+    juce::TextButton optionsButton;
+    SafePointer<DialogWindow> dialogWindow;
+
     GaitEventDetectorComponent gaitEventDetector;
+
+    SonificationMode sonificationMode{SonificationMode::SynthRhythmic};
+    FMSynth synth;
+    AudioSource* inputSource;
+    CriticalSection audioCallbackLock;
+    juce::dsp::Gain<float> gain;
+    juce::dsp::Panner<float> panner;
+    juce::dsp::Reverb reverb;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 
     void syncVideoToIMU();
+
+    void updateSonification();
+
+    void showOptions();
 };

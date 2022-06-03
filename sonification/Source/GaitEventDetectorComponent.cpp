@@ -10,7 +10,11 @@ GaitEventDetectorComponent::GaitEventDetectorComponent(File &file) :
         imuData(500, {0.f, 0.f}),
         jerk(3, 0.f),
         gaitEvents(50, {GaitEventType::Unknown, Foot::Unknown, 0.f, 0, 0.f, 0.f}),
-        groundContacts(50, {{}, {}, 0.f, Foot::Unknown}) {
+        groundContacts(50, {{
+                                    GaitEventType::Unknown, Foot::Unknown, 0.f, 0, 0.f, 0.f
+                            }, {
+                                    GaitEventType::Unknown, Foot::Unknown, 0.f, 0, 0.f, 0.f
+                            }, 0.f, Foot::Unknown}) {
 }
 
 bool GaitEventDetectorComponent::prepareToProcess() {
@@ -529,4 +533,22 @@ float GaitEventDetectorComponent::calculateCadence() {
 
     auto mean = (totalTimeMs / static_cast<float>(numEvents));
     return 60000.f / mean;
+}
+
+bool GaitEventDetectorComponent::hasEventNow(GaitEventDetectorComponent::GaitEventType type) {
+    auto sampleOffset{0};
+    GaitEvent event{};
+    switch (type) {
+        case GaitEventType::Unknown:
+            return false;
+        case GaitEventType::ToeOff:
+            event = lastToeOff;
+            sampleOffset = 1;
+            break;
+        case GaitEventType::InitialContact:
+            event = lastInitialContact;
+            sampleOffset = IC_LOOKBACK_SAMPS;
+            break;
+    }
+    return event.sampleIndex == elapsedSamples - sampleOffset;
 }

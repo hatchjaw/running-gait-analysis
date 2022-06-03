@@ -67,7 +67,10 @@ target_sources(GaitSonification
         Source/CircularBuffer.cpp
         Source/BiquadFilter.cpp
         Source/Utils.cpp
-        Source/SmoothedParameter.cpp)
+        Source/SmoothedParameter.cpp
+        Source/Synthesis/FMSynth.cpp
+        Source/Synthesis/FMOsc.cpp
+        Source/Synthesis/OADEnv.cpp)
 
 # `target_compile_definitions` adds some preprocessor definitions to our target. In a Projucer
 # project, these might be passed in the 'Preprocessor Definitions' field. JUCE modules also make use
@@ -103,7 +106,7 @@ target_link_libraries(GaitSonification
         PRIVATE
         # AudioPluginData           # If we'd created a binary data target, we'd link to it here
         juce::juce_audio_utils
-#        juce::juce_dsp
+        juce::juce_dsp
         juce::juce_video
         PUBLIC
         juce::juce_recommended_config_flags

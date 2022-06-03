@@ -86,6 +86,8 @@ public:
 
     float getCadence();
 
+    bool hasEventNow(GaitEventDetectorComponent::GaitEventType);
+
 private:
     enum class InflectionType {
         Minimum,
