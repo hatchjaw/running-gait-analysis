@@ -3,7 +3,7 @@
 
 //==============================================================================
 MainComponent::MainComponent() :
-        gaitEventDetector(captureFile) {
+        gaitEventDetector(captureFile, asymmetryThresholdLow, asymmetryThresholdHigh) {
     // Make sure you set the size of the component after
     // you add any child components.
     setSize(1000, 800);
@@ -20,33 +20,46 @@ MainComponent::MainComponent() :
         setAudioChannels(2, NUM_OUTPUT_CHANNELS);
     }
 
-    fileChooser = std::make_unique<FileChooser>("Select a capture file",
-                                                File("~/src/matlab/smc/ei"),
-                                                "*.csv");
+//    fileChooser = std::make_unique<FileChooser>("Select a capture file",
+//                                                File("~/src/matlab/smc/ei"),
+//                                                "*.csv");
 
     addAndMakeVisible(openBrowserButton);
     openBrowserButton.setButtonText("Select capture file");
-    openBrowserButton.addListener(this);
+    openBrowserButton.onClick = [this] { selectCaptureFile(); };
 
     addAndMakeVisible(selectedFileLabel);
     selectedFileLabel.setJustificationType(Justification::centredLeft);
 
+    addAndMakeVisible(sonificationModeSelector);
+    sonificationModeSelector.addItem("Gait-event synth", 1);
+    sonificationModeSelector.addItem("Constant synth", 2);
+    sonificationModeSelector.addItem("Audio file", 3);
+    sonificationModeSelector.onChange = [this] {
+        sonificationMode = static_cast<SonificationMode>(sonificationModeSelector.getSelectedId());
+    };
+    sonificationModeSelector.setSelectedId(SonificationMode::SynthRhythmic, juce::dontSendNotification);
+
+    addAndMakeVisible(sonificationModeLabel);
+    sonificationModeLabel.attachToComponent(&sonificationModeSelector, true);
+    sonificationModeLabel.setText("Sonification Mode", juce::dontSendNotification);
+
     addAndMakeVisible(playButton);
     playButton.setButtonText("Play");
-    playButton.addListener(this);
+    playButton.onClick = [this] { play(); };
     playButton.setEnabled(false);
 
     addAndMakeVisible(stopButton);
     stopButton.setButtonText("Stop");
-    stopButton.addListener(this);
+    stopButton.onClick = [this] { stop(); };
     stopButton.setEnabled(false);
 
     addAndMakeVisible(playbackSpeedLabel);
     playbackSpeedLabel.attachToComponent(&playbackSpeedSlider, true);
-    playbackSpeedLabel.setText("Data playback rate", juce::dontSendNotification);
+    playbackSpeedLabel.setText("Playback rate", juce::dontSendNotification);
 
     addAndMakeVisible(playbackSpeedSlider);
-    playbackSpeedSlider.addListener(this);
+    playbackSpeedSlider.onDragEnd = [this] { changePlaybackSpeed(); };
     playbackSpeedSlider.setEnabled(false);
     playbackSpeedSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     playbackSpeedSlider.setNormalisableRange({.01, 3.0, .01});
@@ -60,12 +73,30 @@ MainComponent::MainComponent() :
     strideLookbackLabel.setText("#stride average", juce::dontSendNotification);
 
     addAndMakeVisible(strideLookbackSlider);
-    strideLookbackSlider.addListener(this);
+    strideLookbackSlider.onValueChange = [this] {
+        gaitEventDetector.setStrideLookback(static_cast<int>(strideLookbackSlider.getValue()));
+    };
     strideLookbackSlider.setSliderStyle(juce::Slider::IncDecButtons);
     strideLookbackSlider.setNormalisableRange({1, 10, 1});
     strideLookbackSlider.setValue(4);
     strideLookbackSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, true, 40,
                                          strideLookbackSlider.getTextBoxHeight());
+
+    addAndMakeVisible(asymmetryThresholdsLabel);
+    asymmetryThresholdsLabel.attachToComponent(&asymmetryThresholdsSlider, true);
+    asymmetryThresholdsLabel.setText("Asymmetry thresholds", juce::dontSendNotification);
+
+    addAndMakeVisible(asymmetryThresholdsSlider);
+    asymmetryThresholdsSlider.onValueChange = [this] {
+        asymmetryThresholdLow = asymmetryThresholdsSlider.getMinValue() * .01f;
+        asymmetryThresholdHigh = asymmetryThresholdsSlider.getMaxValue() * .01f;
+        gaitEventDetector.repaint();
+    };
+    asymmetryThresholdsSlider.setSliderStyle(juce::Slider::TwoValueHorizontal);
+    asymmetryThresholdsSlider.setNormalisableRange({50.f, 55.f, .1f});
+    asymmetryThresholdsSlider.setMinAndMaxValues(asymmetryThresholdLow * 100.f, asymmetryThresholdHigh * 100.f,
+                                                 juce::dontSendNotification);
+    asymmetryThresholdsSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
 
     addChildComponent(video);
 
@@ -73,18 +104,12 @@ MainComponent::MainComponent() :
 
     addAndMakeVisible(optionsButton);
     optionsButton.setButtonText("Options");
-    optionsButton.addListener(this);
+    optionsButton.onClick = [this] { showOptions(); };
 }
 
 MainComponent::~MainComponent() {
     // This shuts down the audio device and clears the audio source.
     shutdownAudio();
-    openBrowserButton.removeListener(this);
-    playButton.removeListener(this);
-    stopButton.removeListener(this);
-    optionsButton.removeListener(this);
-    playbackSpeedSlider.removeListener(this);
-    strideLookbackSlider.removeListener(this);
 }
 
 //==============================================================================
@@ -101,10 +126,10 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     panner.prepare(spec);
 
     reverb.prepare(spec);
-    reverb.setParameters(juce::Reverb::Parameters{.5f, .25f, 0.f, 1.f, .5f});
+    reverb.setParameters(juce::Reverb::Parameters{.5f, .25f, 0.f, 1.f, 0.f});
 
     gain.prepare(spec);
-    gain.setGainLinear(.5);
+    gain.setGainLinear(.5f);
 
     auto params = FMSynth::Parameters{
             FMOsc::LINEAR,
@@ -114,7 +139,7 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
                     }),
                     FMOsc::Parameters(1.35, .5)
             },
-            OADEnv::Parameters(0.f, 0.05f, .2f)
+            OADEnv::Parameters(0.f, 0.05f, synthDecayTime)
     };
 
     FMOsc carrier{params.carrierMode};
@@ -167,16 +192,18 @@ void MainComponent::paint(juce::Graphics &g) {
     auto font = juce::Font{};
     g.setFont(juce::Font{"Monaco", 12.f, juce::Font::plain});
     g.setColour(Colours::pink);
-    g.drawText("Video: " + juce::String(video.getPlayPosition()), bounds.getRight() - 100, bounds.getBottom() - 50,
+    g.drawText("Video: " + juce::String(video.getPlayPosition()),
+               bounds.getRight() - 100,
+               bounds.getBottom() - 15,
                100,
-               50,
+               15,
                juce::Justification::left);
     g.setColour(Colours::lightblue);
-    g.drawText("IMU:   " + juce::String(gaitEventDetector.getCurrentTime() * .001 + videoOffset), getRight() - 100,
-               getBottom
-                       () - 80,
+    g.drawText("IMU:   " + juce::String(gaitEventDetector.getCurrentTime() * .001 + videoOffset),
+               getRight() - 100,
+               getBottom() - 30,
                100,
-               50,
+               15,
                juce::Justification::left);
 }
 
@@ -188,71 +215,29 @@ void MainComponent::resized() {
 
     openBrowserButton.setBounds(bounds.getX() + padding, bounds.getY() + padding, 150, 30);
     selectedFileLabel.setBounds(openBrowserButton.getRight(), bounds.getY() + padding, 200, 30);
-    playButton.setBounds(bounds.getX() + padding, openBrowserButton.getBottom() + padding, 100, 30);
-    stopButton.setBounds(playButton.getRight() + padding, openBrowserButton.getBottom() + padding, 100, 30);
-    playbackSpeedSlider.setBounds(stopButton.getRight() + 140,
+    sonificationModeSelector.setBounds(selectedFileLabel.getRight() + 125, bounds.getY() + padding, 175, 30);
+    playButton.setBounds(bounds.getX() + padding, openBrowserButton.getBottom() + padding, 72, 30);
+    stopButton.setBounds(playButton.getRight() + padding + 1, openBrowserButton.getBottom() + padding, 72, 30);
+    playbackSpeedSlider.setBounds(stopButton.getRight() + 110,
                                   openBrowserButton.getBottom() + padding,
-                                  225,
+                                  200,
                                   30);
     strideLookbackSlider.setBounds(playbackSpeedSlider.getRight() + 120,
                                    openBrowserButton.getBottom() + padding,
-                                   125,
+                                   100,
                                    30);
-    video.setBounds(bounds.getRight() - videoWidth - padding, playButton.getBottom() + 20, videoWidth, 640);
+    asymmetryThresholdsSlider.setBounds(strideLookbackSlider.getRight() + 160,
+                                        openBrowserButton.getBottom() + padding,
+                                        140,
+                                        30);
+    video.setBounds(bounds.getRight() - videoWidth - padding, playButton.getBottom() + 50, videoWidth, 640);
     gaitEventDetector.setBounds(bounds.getX() + padding,
-                                playButton.getBottom() + 20,
+                                playButton.getBottom() + 50,
                                 bounds.getWidth() - videoWidth - padding * 2,
                                 video.getHeight());
     optionsButton.setBounds(bounds.getRight() - 60, padding * 2, 50, 20);
 }
 
-void MainComponent::buttonClicked(Button *button) {
-    if (button == &optionsButton) {
-        showOptions();
-    } else if (button == &openBrowserButton) {
-        switchPlayState(PlayState::Stopped);
-        fileChooser->launchAsync(
-                FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
-                [this](const FileChooser &chooser) {
-                    auto csvFile = chooser.getResult();
-                    if (csvFile.getFileName() != "" && csvFile.existsAsFile()) {
-                        // Try to load associated video.
-                        auto videoFile = File{csvFile.getParentDirectory().getFullPathName() +
-                                              "/../videos/" +
-                                              csvFile.getFileNameWithoutExtension() +
-                                              "_480.mov"};
-                        if (videoFile.existsAsFile()) {
-                            video.load(videoFile);
-                            video.setVisible(true);
-
-                            selectedFileLabel.setText("File: " + csvFile.getFileName(),
-                                                      NotificationType::dontSendNotification);
-
-                            captureFile = csvFile;
-
-                            playbackSpeedSlider.setEnabled(true);
-                            switchPlayState(PlayState::Stopped);
-                        } else {
-                            selectedFileLabel.setText("Loaded capture data, but failed to load video.",
-                                                      NotificationType::dontSendNotification);;
-                        }
-                    } else {
-                        selectedFileLabel.setText("Failed to load capture data.",
-                                                  NotificationType::dontSendNotification);
-                    }
-                }
-        );
-    } else if (button == &playButton && playButton.isEnabled()) {
-        if (!gaitEventDetector.prepareToProcess()) {
-            return;
-        }
-        auto imuTime = gaitEventDetector.getCurrentTime() * .001;
-        video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
-        switchPlayState(PlayState::Playing);
-    } else if (button == &stopButton) {
-        switchPlayState(PlayState::Stopped);
-    }
-}
 
 void MainComponent::showOptions() {
     DialogWindow::LaunchOptions options;
@@ -280,10 +265,10 @@ void MainComponent::showOptions() {
     options.useNativeTitleBar = true;
     options.resizable = false;
 
-    dialogWindow = options.launchAsync();
+    optionsWindow = options.launchAsync();
 
-    if (dialogWindow != nullptr)
-        dialogWindow->centreWithSize(400, 300);
+    if (optionsWindow != nullptr)
+        optionsWindow->centreWithSize(400, 300);
 }
 
 void MainComponent::hiResTimerCallback() {
@@ -342,21 +327,6 @@ void MainComponent::switchPlayState(PlayState state) {
     }
 }
 
-void MainComponent::sliderValueChanged(Slider *slider) {
-    if (slider == &strideLookbackSlider) {
-        gaitEventDetector.setStrideLookback(slider->getValue());
-    }
-}
-
-void MainComponent::sliderDragEnded(Slider *slider) {
-    if (slider == &playbackSpeedSlider) {
-        auto speed = slider->getValue();
-        video.setPlaySpeed(speed);
-        playbackSpeed = static_cast<float>(speed);
-        syncVideoToIMU();
-    }
-}
-
 void MainComponent::syncVideoToIMU() {
     auto imuTime = gaitEventDetector.getCurrentTime() * .001;
     video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
@@ -365,38 +335,103 @@ void MainComponent::syncVideoToIMU() {
 void MainComponent::updateSonification() {
     // Raw GCT balance, 0 (L) to 1 (R)
     auto balance = gaitEventDetector.getGtcBalance();
-    // Asymmetry -50 - +50
-    auto asymmetryPct = 100.f * (balance - .5f);
+    // Asymmetry -.5 - +.5
+    auto asymmetry = balance - .5f;
     // Absolute (polarisation-independent) asymmetry
-    auto absAsymmetry = fabsf(asymmetryPct);
+    auto absAsymmetry = fabsf(asymmetry);
 
     switch (sonificationMode) {
         case SonificationMode::SynthConstant:
             break;
         case SonificationMode::SynthRhythmic: {
-            auto freq = 200.f + gaitEventDetector.getCadence() * 2.f;
+//            auto freq = 200.f + gaitEventDetector.getCadence() * 2.f;
+            auto freq = carrierBasisFreq * powf(2.f, gaitEventDetector.getCadence() * .01f);
             auto amp = .5f;
+            synth.setEnvelope({0.f, .05f, synthDecayTime});
             // Check for new note
             if (gaitEventDetector.hasEventNow(GaitEventDetectorComponent::GaitEventType::ToeOff)) {
                 synth.startNote(freq, amp);
+            } else {
+                synth.setCarrierFrequency(freq);
             }
 
-            synth.setCarrierFrequency(200.f + gaitEventDetector.getCadence() * 2.f);
-
-            auto modAmount = 2.5f * Utils::clamp(absAsymmetry - .75f, 0.f, 100.f);
-            synth.setModulationAmount(modAmount);
+//            auto modAmount = 2.f * Utils::clamp(absAsymmetry - .75f, 0.f, 100.f);
+            auto modAmount = fmMultiplier * Utils::clamp(absAsymmetry + .5f - asymmetryThresholdLow, 0.f, 1.f);
+            synth.setModulationAmount(modAmount > 0.f ? 2.f + modAmount : 0);
             break;
         }
         case SonificationMode::AudioFile:
             break;
     }
 
-    auto pan = asymmetryPct * .25f;
+//    auto pan = asymmetryPct * .25f;
+    auto pan = asymmetry * 30.f;
     panner.setPan(Utils::clamp(pan, -1.f, 1.f));
 
     auto reverbParams = reverb.getParameters();
-    auto reverbAmount = Utils::clamp(absAsymmetry - 2.5f, 0.f, 100.f);
+//    auto reverbAmount = Utils::clamp(absAsymmetry - 2.5f, 0.f, 100.f);
+    auto reverbAmount = reverbAmountMultiplier * Utils::clamp(absAsymmetry + .5f - asymmetryThresholdHigh, 0.f, 1.f);
     reverbParams.wetLevel = reverbAmount;
     reverbParams.dryLevel = 1.f - reverbAmount;
     reverb.setParameters(reverbParams);
+}
+
+void MainComponent::play() {
+    if (playButton.isEnabled()) {
+        if (!gaitEventDetector.prepareToProcess()) {
+            return;
+        }
+        auto imuTime = gaitEventDetector.getCurrentTime() * .001;
+        video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
+        switchPlayState(PlayState::Playing);
+    }
+}
+
+void MainComponent::stop() {
+    switchPlayState(PlayState::Stopped);
+}
+
+void MainComponent::selectCaptureFile() {
+    switchPlayState(PlayState::Stopped);
+    auto fc = new FileChooser{"Select a capture file",
+                              File("~/src/matlab/smc/ei"),
+                              "*.csv"};
+    fc->launchAsync(
+            FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
+            [this](const FileChooser &chooser) {
+                auto csvFile = chooser.getResult();
+                if (csvFile.getFileName() != "" && csvFile.existsAsFile()) {
+                    // Try to load associated video.
+                    auto videoFile = File{csvFile.getParentDirectory().getFullPathName() +
+                                          "/../videos/" +
+                                          csvFile.getFileNameWithoutExtension() +
+                                          "_480.mov"};
+                    if (videoFile.existsAsFile()) {
+                        video.load(videoFile);
+                        video.setVisible(true);
+
+                        selectedFileLabel.setText("File: " + csvFile.getFileName(),
+                                                  NotificationType::dontSendNotification);
+
+                        captureFile = csvFile;
+
+                        playbackSpeedSlider.setEnabled(true);
+                        switchPlayState(PlayState::Stopped);
+                    } else {
+                        selectedFileLabel.setText("Loaded capture data, but failed to load video.",
+                                                  NotificationType::dontSendNotification);
+                    }
+                } else {
+                    selectedFileLabel.setText("Failed to load capture data.",
+                                              NotificationType::dontSendNotification);
+                }
+            }
+    );
+}
+
+void MainComponent::changePlaybackSpeed() {
+    auto speed = playbackSpeedSlider.getValue();
+    video.setPlaySpeed(speed);
+    playbackSpeed = static_cast<float>(speed);
+    syncVideoToIMU();
 }

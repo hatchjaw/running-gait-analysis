@@ -5,7 +5,11 @@
 #include "GaitEventDetectorComponent.h"
 #include "Utils.h"
 
-GaitEventDetectorComponent::GaitEventDetectorComponent(File &file) :
+GaitEventDetectorComponent::GaitEventDetectorComponent(
+        File &file,
+        float &toleratedAsymmetryThreshold,
+        float &extremeAsymmetryThreshold
+) :
         captureFile(file),
         imuData(500, {0.f, 0.f}),
         jerk(3, 0.f),
@@ -14,7 +18,9 @@ GaitEventDetectorComponent::GaitEventDetectorComponent(File &file) :
                                     GaitEventType::Unknown, Foot::Unknown, 0.f, 0, 0.f, 0.f
                             }, {
                                     GaitEventType::Unknown, Foot::Unknown, 0.f, 0, 0.f, 0.f
-                            }, 0.f, Foot::Unknown}) {
+                            }, 0.f, Foot::Unknown}),
+        asymmetryThresholdLow(toleratedAsymmetryThreshold),
+        asymmetryThresholdHigh(extremeAsymmetryThreshold) {
 }
 
 bool GaitEventDetectorComponent::prepareToProcess() {
@@ -405,28 +411,47 @@ void GaitEventDetectorComponent::displayGctBalance(Graphics &g) {
             indicatorRight{indicatorLeft + indicatorWidth},
             indicatorVcentre{floor(h * .25f)},
             indicatorHcentre{indicatorLeft + indicatorWidth * .5f};
+    // Markers for low/high asymmetry thresholds.
+    auto indicatorLow{((asymmetryThresholdLow * 100.f - 50.f) / 5.f) * indicatorWidth * .5f},
+            indicatorHigh{((asymmetryThresholdHigh * 100.f - 50.f) / 5.f) * indicatorWidth * .5f};
 
     // Draw line to represent 55L, 50:50, and 55R, plus a y-axis.
     g.setColour(juce::Colours::grey);
     g.drawHorizontalLine(indicatorVcentre, indicatorLeft, indicatorRight);
     g.drawVerticalLine(indicatorLeft, indicatorVcentre - 30, indicatorVcentre + 30);
+    g.drawVerticalLine(indicatorHcentre - indicatorHigh, indicatorVcentre - 20, indicatorVcentre + 20);
+    g.drawVerticalLine(indicatorHcentre - indicatorLow, indicatorVcentre - 10, indicatorVcentre + 10);
     g.drawVerticalLine(indicatorHcentre, indicatorVcentre - 40, indicatorVcentre + 40);
+    g.drawVerticalLine(indicatorHcentre + indicatorLow, indicatorVcentre - 10, indicatorVcentre + 10);
+    g.drawVerticalLine(indicatorHcentre + indicatorHigh, indicatorVcentre - 20, indicatorVcentre + 20);
     g.drawVerticalLine(indicatorRight, indicatorVcentre - 30, indicatorVcentre + 30);
     g.setFont(10.);
-    g.drawText("50%", indicatorHcentre - 20, indicatorVcentre - 50, 40, 10, juce::Justification::centredTop);
+
+    auto asymHighLabel = juce::String{asymmetryThresholdHigh * 100.f, 1} + "%";
+    auto asymLowLabel = juce::String{asymmetryThresholdLow * 100.f, 1} + "%";
     g.drawText("55% L", indicatorLeft - 20, indicatorVcentre - 40, 40, 10, juce::Justification::centredTop);
+    g.drawText(asymHighLabel + " L", indicatorHcentre - indicatorHigh - 20, indicatorVcentre - 30, 40, 10,
+               juce::Justification::centredTop);
+    g.drawText(asymLowLabel + " L", indicatorHcentre - indicatorLow - 20, indicatorVcentre - 20, 40, 10,
+               juce::Justification::centredTop);
+    g.drawText("50%", indicatorHcentre - 20, indicatorVcentre - 50, 40, 10, juce::Justification::centredTop);
+    g.drawText(asymLowLabel + " R", indicatorHcentre + indicatorLow - 20, indicatorVcentre - 20, 40, 10,
+               juce::Justification::centredTop);
+    g.drawText(asymHighLabel + " R", indicatorHcentre + indicatorHigh - 20, indicatorVcentre - 30, 40, 10,
+               juce::Justification::centredTop);
     g.drawText("55% R", indicatorRight - 20, indicatorVcentre - 40, 40, 10, juce::Justification::centredTop);
 
     // Draw a marker to represent the GCT balance
     auto balance = gctBalance.getNext();
+    auto absBalance = fabsf(balance - .5f) + .5f;
     auto colour = juce::Colours::lightgrey;
-    if (balance > .51) {
-        colour = RIGHT_COLOUR.brighter();
-    } else if (balance < .49) {
-        colour = LEFT_COLOUR.brighter();
+    if (balance > asymmetryThresholdLow) {
+        colour = RIGHT_COLOUR.brighter(.25f);
+    } else if (balance < 1.f - asymmetryThresholdLow) {
+        colour = LEFT_COLOUR.brighter(.25f);
     }
-    // Outside 'acceptable' range.
-    if (balance > .515 || balance < .485) {
+
+    if (absBalance > asymmetryThresholdHigh) {// balance > .515 || balance < .485) {
         colour = colour.withSaturation(1.5);
     }
     g.setColour(colour);

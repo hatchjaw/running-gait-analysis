@@ -49,6 +49,8 @@ public:
 
     void setCarrierFrequency(float frequency);
 
+    void setEnvelope(OADEnv::Parameters envParams);
+
 protected:
     FMOsc carrier;
 

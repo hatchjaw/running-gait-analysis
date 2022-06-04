@@ -11,8 +11,6 @@
     your controls and content.
 */
 class MainComponent : public juce::AudioAppComponent,
-                      juce::Button::Listener,
-                      juce::Slider::Listener,
                       juce::HighResolutionTimer {
 public:
     static constexpr int NUM_OUTPUT_CHANNELS{2};
@@ -22,9 +20,9 @@ public:
         Stopped
     };
 
-    enum class SonificationMode {
+    enum SonificationMode {
+        SynthRhythmic = 1,
         SynthConstant,
-        SynthRhythmic,
         AudioFile
     };
 
@@ -59,20 +57,28 @@ private:
             {"Vertical_15",    29.6}
     };
 
-    void hiResTimerCallback() override;
+    void play();
 
-    void buttonClicked(Button *button) override;
+    void stop();
 
-    void sliderValueChanged(Slider *slider) override;
+    void selectCaptureFile();
 
-    void sliderDragEnded(Slider *slider) override;
+    void changePlaybackSpeed();
 
     void switchPlayState(PlayState state);
-    //==============================================================================
+
+    void updateSonification();
+
+    void showOptions();
+
+    void syncVideoToIMU();
+
+    void hiResTimerCallback() override;
+
     PlayState playState{PlayState::Stopped};
 
     juce::TextButton openBrowserButton;
-    std::unique_ptr<FileChooser> fileChooser;
+//    std::unique_ptr<FileChooser> fileChooser;
     juce::File captureFile;
     juce::Label selectedFileLabel;
 
@@ -87,25 +93,30 @@ private:
     float playbackSpeed{1.f};
     juce::Label strideLookbackLabel;
     juce::Slider strideLookbackSlider;
+    juce::Label asymmetryThresholdsLabel;
+    juce::Slider asymmetryThresholdsSlider;
 
     juce::TextButton optionsButton;
-    SafePointer<DialogWindow> dialogWindow;
+    SafePointer <DialogWindow> optionsWindow;
 
     GaitEventDetectorComponent gaitEventDetector;
 
     SonificationMode sonificationMode{SonificationMode::SynthRhythmic};
+    juce::Label sonificationModeLabel;
+    juce::ComboBox sonificationModeSelector;
     FMSynth synth;
-    AudioSource* inputSource;
+    AudioSource *inputSource;
     CriticalSection audioCallbackLock;
     juce::dsp::Gain<float> gain;
     juce::dsp::Panner<float> panner;
     juce::dsp::Reverb reverb;
 
+    float asymmetryThresholdLow{.515f},
+            asymmetryThresholdHigh{.53f},
+            carrierBasisFreq{164.81f},
+            fmMultiplier{70.f},
+            synthDecayTime{.2f},
+            reverbAmountMultiplier{100.f};
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
-
-    void syncVideoToIMU();
-
-    void updateSonification();
-
-    void showOptions();
 };

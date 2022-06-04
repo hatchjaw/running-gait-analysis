@@ -58,7 +58,9 @@ public:
         float balance;
     };
 
-    explicit GaitEventDetectorComponent(juce::File &file);
+    explicit GaitEventDetectorComponent(juce::File &file,
+                                        float &toleratedAsymmetryThreshold,
+                                        float &extremeAsymmetryThreshold);
 
     bool prepareToProcess();
 
@@ -175,6 +177,8 @@ private:
 
     BiquadFilter gyroFilter{0.002943989366965, 0.005887978733929, 0.002943989366965,
                             1.840758682071433, -0.852534639539291};
+
+    float &asymmetryThresholdLow, &asymmetryThresholdHigh;
 };
 
 #endif //GAIT_SONIFICATION_GAITEVENTDETECTORCOMPONENT_H

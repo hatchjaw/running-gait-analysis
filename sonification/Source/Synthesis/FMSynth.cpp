@@ -51,3 +51,7 @@ void FMSynth::stopPlaying() {
 void FMSynth::setCarrierFrequency(float frequency) {
     carrier.setFrequency(frequency);
 }
+
+void FMSynth::setEnvelope(OADEnv::Parameters envParams) {
+    carrier.setEnvelope(envParams);
+}
