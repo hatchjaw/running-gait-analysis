@@ -8,6 +8,7 @@
 
 class Utils {
 public:
+    static float modulo(float b, unsigned int a);
     static float clamp(float input, float min, float max);
 };
 

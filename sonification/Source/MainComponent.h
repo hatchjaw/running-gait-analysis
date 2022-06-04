@@ -4,6 +4,7 @@
 #include <juce_video/playback/juce_VideoComponent.h>
 #include "GaitEventDetectorComponent.h"
 #include "Synthesis/FMSynth.h"
+#include "Processing/AllpassFilter.h"
 
 //==============================================================================
 /*
@@ -75,12 +76,11 @@ private:
 
     void hiResTimerCallback() override;
 
-    PlayState playState{PlayState::Stopped};
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
-    juce::TextButton openBrowserButton;
-//    std::unique_ptr<FileChooser> fileChooser;
+    juce::TextButton openCaptureBrowserButton;
     juce::File captureFile;
-    juce::Label selectedFileLabel;
+    juce::Label selectedCaptureFileLabel;
 
     juce::VideoComponent video{false};
     float videoOffset{0.f};
@@ -105,8 +105,17 @@ private:
     juce::Label sonificationModeLabel;
     juce::ComboBox sonificationModeSelector;
     FMSynth synth;
-    AudioSource *inputSource;
-    CriticalSection audioCallbackLock;
+
+//    CriticalSection audioCallbackLock;
+    juce::AudioFormatManager formatManager;
+    std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
+    juce::AudioTransportSource transportSource;
+    juce::TextButton openAudioBrowserButton;
+    juce::File audioFile;
+    juce::Label selectedAudioFileLabel;
+
+    AllpassFilter allpass1{2};
+    AllpassFilter allpass2{2};
     juce::dsp::Gain<float> gain;
     juce::dsp::Panner<float> panner;
     juce::dsp::Reverb reverb;
@@ -119,4 +128,6 @@ private:
             reverbAmountMultiplier{100.f};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
+
+    void selectAudioFile();
 };

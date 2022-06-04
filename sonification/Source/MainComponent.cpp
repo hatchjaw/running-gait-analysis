@@ -1,4 +1,6 @@
 #include "MainComponent.h"
+
+#include <utility>
 #include "Utils.h"
 
 //==============================================================================
@@ -20,16 +22,14 @@ MainComponent::MainComponent() :
         setAudioChannels(2, NUM_OUTPUT_CHANNELS);
     }
 
-//    fileChooser = std::make_unique<FileChooser>("Select a capture file",
-//                                                File("~/src/matlab/smc/ei"),
-//                                                "*.csv");
+    formatManager.registerBasicFormats();
 
-    addAndMakeVisible(openBrowserButton);
-    openBrowserButton.setButtonText("Select capture file");
-    openBrowserButton.onClick = [this] { selectCaptureFile(); };
+    addAndMakeVisible(openCaptureBrowserButton);
+    openCaptureBrowserButton.setButtonText("Select capture file");
+    openCaptureBrowserButton.onClick = [this] { selectCaptureFile(); };
 
-    addAndMakeVisible(selectedFileLabel);
-    selectedFileLabel.setJustificationType(Justification::centredLeft);
+    addAndMakeVisible(selectedCaptureFileLabel);
+    selectedCaptureFileLabel.setJustificationType(Justification::centredLeft);
 
     addAndMakeVisible(sonificationModeSelector);
     sonificationModeSelector.addItem("Gait-event synth", 1);
@@ -37,12 +37,27 @@ MainComponent::MainComponent() :
     sonificationModeSelector.addItem("Audio file", 3);
     sonificationModeSelector.onChange = [this] {
         sonificationMode = static_cast<SonificationMode>(sonificationModeSelector.getSelectedId());
+        if (sonificationMode == AudioFile) {
+            openAudioBrowserButton.setVisible(true);
+            openAudioBrowserButton.setEnabled(true);
+        } else {
+            openAudioBrowserButton.setVisible(false);
+            openAudioBrowserButton.setEnabled(false);
+        }
     };
     sonificationModeSelector.setSelectedId(SonificationMode::SynthRhythmic, juce::dontSendNotification);
 
     addAndMakeVisible(sonificationModeLabel);
     sonificationModeLabel.attachToComponent(&sonificationModeSelector, true);
     sonificationModeLabel.setText("Sonification Mode", juce::dontSendNotification);
+
+    addChildComponent(openAudioBrowserButton);
+    openAudioBrowserButton.setEnabled(false);
+    openAudioBrowserButton.setButtonText("Select audio file");
+    openAudioBrowserButton.onClick = [this] { selectAudioFile(); };
+
+    addAndMakeVisible(selectedAudioFileLabel);
+    selectedAudioFileLabel.setJustificationType(Justification::centredLeft);
 
     addAndMakeVisible(playButton);
     playButton.setButtonText("Play");
@@ -152,6 +167,11 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     synth.setModulationAmount(0.f);
 
     synth.prepareToPlay(sampleRate, samplesPerBlockExpected, NUM_OUTPUT_CHANNELS);
+
+    allpass1.setGain(.23f);
+    allpass2.setGain(.71f);
+
+    transportSource.prepareToPlay(samplesPerBlockExpected, sampleRate);
 }
 
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill) {
@@ -164,9 +184,15 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &buffer
             synth.renderNextBlock(*bufferToFill.buffer, 0, bufferToFill.numSamples);
             break;
         case SonificationMode::AudioFile:
-            inputSource->getNextAudioBlock(bufferToFill);
-            ScopedLock audioLock(audioCallbackLock);
-//            this->process (juce::dsp::ProcessContextReplacing<float> (block));
+            if (readerSource == nullptr) {
+                bufferToFill.clearActiveBufferRegion();
+                return;
+            }
+
+            transportSource.getNextAudioBlock(bufferToFill);
+
+            allpass1.processBlock(block);
+            allpass2.processBlock(block);
             break;
     }
 
@@ -181,6 +207,7 @@ void MainComponent::releaseResources() {
     // restarted due to a setting change.
 
     // For more details, see the help for AudioProcessor::releaseResources()
+    transportSource.releaseResources();
 }
 
 //==============================================================================
@@ -213,21 +240,23 @@ void MainComponent::resized() {
     auto videoWidth = 360;
     auto padding = 5;
 
-    openBrowserButton.setBounds(bounds.getX() + padding, bounds.getY() + padding, 150, 30);
-    selectedFileLabel.setBounds(openBrowserButton.getRight(), bounds.getY() + padding, 200, 30);
-    sonificationModeSelector.setBounds(selectedFileLabel.getRight() + 125, bounds.getY() + padding, 175, 30);
-    playButton.setBounds(bounds.getX() + padding, openBrowserButton.getBottom() + padding, 72, 30);
-    stopButton.setBounds(playButton.getRight() + padding + 1, openBrowserButton.getBottom() + padding, 72, 30);
+    openCaptureBrowserButton.setBounds(bounds.getX() + padding, bounds.getY() + padding, 150, 30);
+    selectedCaptureFileLabel.setBounds(openCaptureBrowserButton.getRight(), bounds.getY() + padding, 200, 30);
+    sonificationModeSelector.setBounds(selectedCaptureFileLabel.getRight() + 125, bounds.getY() + padding, 175, 30);
+    openAudioBrowserButton.setBounds(sonificationModeSelector.getRight() + padding, bounds.getY() + padding, 150, 30);
+    selectedAudioFileLabel.setBounds(openAudioBrowserButton.getRight(), bounds.getY() + padding, 180, 30);
+    playButton.setBounds(bounds.getX() + padding, openCaptureBrowserButton.getBottom() + padding, 72, 30);
+    stopButton.setBounds(playButton.getRight() + padding + 1, openCaptureBrowserButton.getBottom() + padding, 72, 30);
     playbackSpeedSlider.setBounds(stopButton.getRight() + 110,
-                                  openBrowserButton.getBottom() + padding,
+                                  openCaptureBrowserButton.getBottom() + padding,
                                   200,
                                   30);
     strideLookbackSlider.setBounds(playbackSpeedSlider.getRight() + 120,
-                                   openBrowserButton.getBottom() + padding,
+                                   openCaptureBrowserButton.getBottom() + padding,
                                    100,
                                    30);
     asymmetryThresholdsSlider.setBounds(strideLookbackSlider.getRight() + 160,
-                                        openBrowserButton.getBottom() + padding,
+                                        openCaptureBrowserButton.getBottom() + padding,
                                         140,
                                         30);
     video.setBounds(bounds.getRight() - videoWidth - padding, playButton.getBottom() + 50, videoWidth, 640);
@@ -235,7 +264,7 @@ void MainComponent::resized() {
                                 playButton.getBottom() + 50,
                                 bounds.getWidth() - videoWidth - padding * 2,
                                 video.getHeight());
-    optionsButton.setBounds(bounds.getRight() - 60, padding * 2, 50, 20);
+    optionsButton.setBounds(padding, getBottom() - padding * 2 - 20, 50, 20);
 }
 
 
@@ -309,6 +338,9 @@ void MainComponent::switchPlayState(PlayState state) {
             startTimer(TIMER_INCREMENT_MS);
             video.setAudioVolume(0.25f);
             video.play();
+            if (sonificationMode == AudioFile) {
+                transportSource.start();
+            }
             break;
         case PlayState::Stopped:
             playButton.setEnabled(true);
@@ -321,8 +353,12 @@ void MainComponent::switchPlayState(PlayState state) {
                 videoOffset = VIDEO_OFFSETS.getWithDefault(captureFile.getFileNameWithoutExtension(), 30.0);
             }
             video.setPlayPosition(videoOffset);
-            synth.stopPlaying();
-            synth.setModulationAmount(0.f);
+            if (sonificationMode == AudioFile) {
+                transportSource.stop();
+            } else {
+                synth.stopPlaying();
+                synth.setModulationAmount(0.f);
+            }
             break;
     }
 }
@@ -361,6 +397,16 @@ void MainComponent::updateSonification() {
             break;
         }
         case SonificationMode::AudioFile:
+            auto filterOrder = static_cast<unsigned int>(floorf(666.f * Utils::clamp(absAsymmetry + .5f -
+                                                                                     asymmetryThresholdLow, 0.f,
+                                                                                     1.f)));
+//            auto filterGain = Utils::clamp(20.f * (absAsymmetry + .5f - asymmetryThresholdLow), 0.f, .5f);
+
+            allpass1.setOrder(filterOrder == 0 ? 0 : 10 + filterOrder);
+            allpass2.setOrder(filterOrder == 0 ? 0 : 17 + filterOrder);
+
+//            allpass1.setGain(1.f - filterGain);
+//            allpass2.setGain(1.f - (2.f * filterGain));
             break;
     }
 
@@ -370,7 +416,10 @@ void MainComponent::updateSonification() {
 
     auto reverbParams = reverb.getParameters();
 //    auto reverbAmount = Utils::clamp(absAsymmetry - 2.5f, 0.f, 100.f);
-    auto reverbAmount = reverbAmountMultiplier * Utils::clamp(absAsymmetry + .5f - asymmetryThresholdHigh, 0.f, 1.f);
+    auto reverbAmount = Utils::clamp(
+            reverbAmountMultiplier * Utils::clamp(absAsymmetry + .5f - asymmetryThresholdHigh, 0.f, 1.f),
+            0.f, 1.f
+    );
     reverbParams.wetLevel = reverbAmount;
     reverbParams.dryLevel = 1.f - reverbAmount;
     reverb.setParameters(reverbParams);
@@ -393,10 +442,10 @@ void MainComponent::stop() {
 
 void MainComponent::selectCaptureFile() {
     switchPlayState(PlayState::Stopped);
-    auto fc = new FileChooser{"Select a capture file",
-                              File("~/src/matlab/smc/ei"),
-                              "*.csv"};
-    fc->launchAsync(
+    fileChooser = std::make_unique<FileChooser>("Select a capture file",
+                                                File("~/src/matlab/smc/ei"),
+                                                "*.csv");
+    fileChooser->launchAsync(
             FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
             [this](const FileChooser &chooser) {
                 auto csvFile = chooser.getResult();
@@ -410,20 +459,20 @@ void MainComponent::selectCaptureFile() {
                         video.load(videoFile);
                         video.setVisible(true);
 
-                        selectedFileLabel.setText("File: " + csvFile.getFileName(),
-                                                  NotificationType::dontSendNotification);
+                        selectedCaptureFileLabel.setText(csvFile.getFileName(),
+                                                         NotificationType::dontSendNotification);
 
                         captureFile = csvFile;
 
                         playbackSpeedSlider.setEnabled(true);
                         switchPlayState(PlayState::Stopped);
                     } else {
-                        selectedFileLabel.setText("Loaded capture data, but failed to load video.",
-                                                  NotificationType::dontSendNotification);
+                        selectedCaptureFileLabel.setText("Loaded capture data, but failed to load video.",
+                                                         NotificationType::dontSendNotification);
                     }
                 } else {
-                    selectedFileLabel.setText("Failed to load capture data.",
-                                              NotificationType::dontSendNotification);
+                    selectedCaptureFileLabel.setText("Failed to load capture data.",
+                                                     NotificationType::dontSendNotification);
                 }
             }
     );
@@ -434,4 +483,32 @@ void MainComponent::changePlaybackSpeed() {
     video.setPlaySpeed(speed);
     playbackSpeed = static_cast<float>(speed);
     syncVideoToIMU();
+}
+
+void MainComponent::selectAudioFile() {
+    switchPlayState(PlayState::Stopped);
+    fileChooser = std::make_unique<FileChooser>("Select an audio file",
+                                                File("~/Music"),
+                                                "*.wav;*.aiff;*.mp3;*.m4a");
+    fileChooser->launchAsync(
+            FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
+            [this](const FileChooser &chooser) {
+                auto file = chooser.getResult();
+                if (file != File{}) {
+                    auto *reader = formatManager.createReaderFor(file);
+
+                    if (reader != nullptr) {
+                        auto newSource = std::make_unique<juce::AudioFormatReaderSource>(reader, true);
+                        transportSource.setSource(newSource.get(), 0, nullptr, reader->sampleRate);
+                        switchPlayState(PlayState::Stopped);
+                        readerSource = std::move(newSource);
+                        selectedAudioFileLabel.setText(file.getFileName(),
+                                                       NotificationType::dontSendNotification);
+                    }
+                } else {
+                    selectedAudioFileLabel.setText("Failed to load audio file.",
+                                                   NotificationType::dontSendNotification);
+                }
+            }
+    );
 }
