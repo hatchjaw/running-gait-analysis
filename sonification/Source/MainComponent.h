@@ -104,30 +104,44 @@ private:
     SonificationMode sonificationMode{SonificationMode::SynthRhythmic};
     juce::Label sonificationModeLabel;
     juce::ComboBox sonificationModeSelector;
-    FMSynth synth;
 
-//    CriticalSection audioCallbackLock;
+    FMSynth synth;
+    juce::Label carrierFreqLabel;
+    juce::Slider carrierFreqSlider;
+    juce::Label modulationAmountLabel;
+    juce::Slider modulationAmountSlider;
+    juce::Label decayTimeLabel;
+    juce::Slider decayTimeSlider;
+
     juce::AudioFormatManager formatManager;
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
     juce::AudioTransportSource transportSource;
     juce::TextButton openAudioBrowserButton;
-    juce::File audioFile;
     juce::Label selectedAudioFileLabel;
 
     AllpassFilter allpass1{2};
     AllpassFilter allpass2{2};
+    juce::Label allpass1GainLabel;
+    juce::Slider allpass1GainSlider;
+    juce::Label allpass2GainLabel;
+    juce::Slider allpass2GainSlider;
+
     juce::dsp::Gain<float> gain;
     juce::dsp::Panner<float> panner;
     juce::dsp::Reverb reverb;
 
     float asymmetryThresholdLow{.515f},
             asymmetryThresholdHigh{.53f},
-            carrierBasisFreq{164.81f},
-            fmMultiplier{70.f},
+            fmModMultiplier{70.f},
             synthDecayTime{.2f},
-            reverbAmountMultiplier{100.f};
+            reverbAmountMultiplier{100.f},
+            allpass1Gain{.23f},
+            allpass2Gain{.71f};
+    std::pair<float, float> carrierFrequencyRange{300.f, 600.f};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 
     void selectAudioFile();
+
+    void setSonificationMode();
 };

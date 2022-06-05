@@ -88,3 +88,7 @@ void OADEnv::setSampleRate(double newSampleRate) noexcept {
     sampleRate = newSampleRate;
     recalculateRates();
 }
+
+void OADEnv::noteOff() {
+    state = State::idle;
+}

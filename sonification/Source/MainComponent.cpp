@@ -35,16 +35,7 @@ MainComponent::MainComponent() :
     sonificationModeSelector.addItem("Gait-event synth", 1);
     sonificationModeSelector.addItem("Constant synth", 2);
     sonificationModeSelector.addItem("Audio file", 3);
-    sonificationModeSelector.onChange = [this] {
-        sonificationMode = static_cast<SonificationMode>(sonificationModeSelector.getSelectedId());
-        if (sonificationMode == AudioFile) {
-            openAudioBrowserButton.setVisible(true);
-            openAudioBrowserButton.setEnabled(true);
-        } else {
-            openAudioBrowserButton.setVisible(false);
-            openAudioBrowserButton.setEnabled(false);
-        }
-    };
+    sonificationModeSelector.onChange = [this] { setSonificationMode(); };
     sonificationModeSelector.setSelectedId(SonificationMode::SynthRhythmic, juce::dontSendNotification);
 
     addAndMakeVisible(sonificationModeLabel);
@@ -59,6 +50,7 @@ MainComponent::MainComponent() :
     addAndMakeVisible(selectedAudioFileLabel);
     selectedAudioFileLabel.setJustificationType(Justification::centredLeft);
 
+    //==========================================================================
     addAndMakeVisible(playButton);
     playButton.setButtonText("Play");
     playButton.onClick = [this] { play(); };
@@ -113,6 +105,75 @@ MainComponent::MainComponent() :
                                                  juce::dontSendNotification);
     asymmetryThresholdsSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
 
+    //==========================================================================
+    addAndMakeVisible(carrierFreqLabel);
+    carrierFreqLabel.attachToComponent(&carrierFreqSlider, true);
+    carrierFreqLabel.setText("Carrier freq. range", juce::dontSendNotification);
+
+    addAndMakeVisible(carrierFreqSlider);
+    carrierFreqSlider.onValueChange = [this] {
+        carrierFrequencyRange.first = carrierFreqSlider.getMinValue();
+        carrierFrequencyRange.second = carrierFreqSlider.getMaxValue();
+    };
+    carrierFreqSlider.setSliderStyle(juce::Slider::TwoValueHorizontal);
+    carrierFreqSlider.setNormalisableRange({100, 1000, .1});
+    carrierFreqSlider.setSkewFactor(.75);
+    carrierFreqSlider.setMinAndMaxValues(carrierFrequencyRange.first, carrierFrequencyRange.second);
+    carrierFreqSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+
+    addAndMakeVisible(modulationAmountLabel);
+    modulationAmountLabel.attachToComponent(&modulationAmountSlider, true);
+    modulationAmountLabel.setText("Modulation factor", juce::dontSendNotification);
+
+    addAndMakeVisible(modulationAmountSlider);
+    modulationAmountSlider.onValueChange = [this] { fmModMultiplier = modulationAmountSlider.getValue(); };
+    modulationAmountSlider.setNormalisableRange({0.f, 200.f, .01f});
+    modulationAmountSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    modulationAmountSlider.setValue(fmModMultiplier);
+    modulationAmountSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+
+    addAndMakeVisible(decayTimeLabel);
+    decayTimeLabel.attachToComponent(&decayTimeSlider, true);
+    decayTimeLabel.setText("Decay time", juce::dontSendNotification);
+
+    addAndMakeVisible(decayTimeSlider);
+    decayTimeSlider.onValueChange = [this] { synthDecayTime = decayTimeSlider.getValue(); };
+    decayTimeSlider.setNormalisableRange({.01f, .5f, .01f});
+    decayTimeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    decayTimeSlider.setValue(synthDecayTime);
+    decayTimeSlider.setTextValueSuffix("s");
+    decayTimeSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 60, decayTimeSlider.getTextBoxHeight());
+
+    addAndMakeVisible(allpass1GainLabel);
+    allpass1GainLabel.attachToComponent(&allpass1GainSlider, true);
+    allpass1GainLabel.setText("Filter 1 gain", juce::dontSendNotification);
+
+    addChildComponent(allpass1GainSlider);
+    allpass1GainSlider.onValueChange = [this] {
+        allpass1Gain = allpass1GainSlider.getValue();
+        allpass1.setGain(1.f - allpass1Gain);
+    };
+    allpass1GainSlider.setNormalisableRange({0.f, 1.f, .01f});
+    allpass1GainSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    allpass1GainSlider.setValue(allpass1Gain);
+    allpass1GainSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 60, allpass1GainSlider.getTextBoxHeight());
+
+    addAndMakeVisible(allpass2GainLabel);
+    allpass2GainLabel.attachToComponent(&allpass2GainSlider, true);
+    allpass2GainLabel.setText("Filter 2 gain", juce::dontSendNotification);
+
+    addChildComponent(allpass2GainSlider);
+    allpass2GainSlider.onValueChange = [this] {
+        allpass2Gain = allpass2GainSlider.getValue();
+        allpass2.setGain(1.f - allpass2Gain);
+    };
+    allpass2GainSlider.setNormalisableRange({0.f, 1.f, .01f});
+    allpass2GainSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    allpass2GainSlider.setValue(allpass2Gain);
+    allpass2GainSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 60, allpass2GainSlider.getTextBoxHeight());
+
+
+    //==========================================================================
     addChildComponent(video);
 
     addAndMakeVisible(gaitEventDetector);
@@ -165,13 +226,13 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     carrier.setEnvelope(params.envParams);
     synth.setCarrier(carrier);
     synth.setModulationAmount(0.f);
-
     synth.prepareToPlay(sampleRate, samplesPerBlockExpected, NUM_OUTPUT_CHANNELS);
 
-    allpass1.setGain(.23f);
-    allpass2.setGain(.71f);
+    allpass1.setGain(1.f - allpass1Gain);
+    allpass2.setGain(1.f - allpass2Gain);
 
     transportSource.prepareToPlay(samplesPerBlockExpected, sampleRate);
+    transportSource.setLooping(true);
 }
 
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill) {
@@ -189,10 +250,13 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &buffer
                 return;
             }
 
-            transportSource.getNextAudioBlock(bufferToFill);
-
-            allpass1.processBlock(block);
-            allpass2.processBlock(block);
+            if (transportSource.isPlaying()) {
+                transportSource.getNextAudioBlock(bufferToFill);
+                allpass1.processBlock(block);
+                allpass2.processBlock(block);
+            } else {
+                bufferToFill.clearActiveBufferRegion();
+            }
             break;
     }
 
@@ -245,6 +309,7 @@ void MainComponent::resized() {
     sonificationModeSelector.setBounds(selectedCaptureFileLabel.getRight() + 125, bounds.getY() + padding, 175, 30);
     openAudioBrowserButton.setBounds(sonificationModeSelector.getRight() + padding, bounds.getY() + padding, 150, 30);
     selectedAudioFileLabel.setBounds(openAudioBrowserButton.getRight(), bounds.getY() + padding, 180, 30);
+    //==========================================================================
     playButton.setBounds(bounds.getX() + padding, openCaptureBrowserButton.getBottom() + padding, 72, 30);
     stopButton.setBounds(playButton.getRight() + padding + 1, openCaptureBrowserButton.getBottom() + padding, 72, 30);
     playbackSpeedSlider.setBounds(stopButton.getRight() + 110,
@@ -259,6 +324,15 @@ void MainComponent::resized() {
                                         openCaptureBrowserButton.getBottom() + padding,
                                         140,
                                         30);
+    //==========================================================================
+    carrierFreqSlider.setBounds(bounds.getX() + 130, playButton.getBottom() + padding, 150, 30);
+    modulationAmountSlider.setBounds(carrierFreqSlider.getRight() + 130, playButton.getBottom() + padding, 150, 30);
+    decayTimeSlider.setBounds(modulationAmountSlider.getRight() + 100, playButton.getBottom() + padding, 150, 30);
+
+    allpass1GainSlider.setBounds(bounds.getX() + 130, playButton.getBottom() + padding, 150, 30);
+    allpass2GainSlider.setBounds(allpass1GainSlider.getRight() + 120, playButton.getBottom() + padding, 150, 30);
+
+    //==========================================================================
     video.setBounds(bounds.getRight() - videoWidth - padding, playButton.getBottom() + 50, videoWidth, 640);
     gaitEventDetector.setBounds(bounds.getX() + padding,
                                 playButton.getBottom() + 50,
@@ -303,6 +377,7 @@ void MainComponent::showOptions() {
 void MainComponent::hiResTimerCallback() {
     if (!video.isPlaying()) {
         gaitEventDetector.stop();
+        transportSource.stop();
     } else if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
         // Check for gait events...
         gaitEventDetector.processNextSample();
@@ -340,6 +415,8 @@ void MainComponent::switchPlayState(PlayState state) {
             video.play();
             if (sonificationMode == AudioFile) {
                 transportSource.start();
+            } else if (sonificationMode == SynthConstant) {
+                synth.startNote(carrierFrequencyRange.first, .5);
             }
             break;
         case PlayState::Stopped:
@@ -378,44 +455,44 @@ void MainComponent::updateSonification() {
 
     switch (sonificationMode) {
         case SonificationMode::SynthConstant:
-            break;
         case SonificationMode::SynthRhythmic: {
-//            auto freq = 200.f + gaitEventDetector.getCadence() * 2.f;
-            auto freq = carrierBasisFreq * powf(2.f, gaitEventDetector.getCadence() * .01f);
+            auto freqRange = carrierFrequencyRange.second - carrierFrequencyRange.first;
+            // Imagine cadence is limited to 100-300 bpm, so a range of 200.
+            auto freq = carrierFrequencyRange.first +
+                        freqRange * (Utils::clamp(gaitEventDetector.getCadence(), 100.f, 300.f) - 100.f) * .005f;
+//            auto freq = carrierFrequencyRange.first * powf(2.f, gaitEventDetector.getCadence() * .01f);
             auto amp = .5f;
-            synth.setEnvelope({0.f, .05f, synthDecayTime});
-            // Check for new note
-            if (gaitEventDetector.hasEventNow(GaitEventDetectorComponent::GaitEventType::ToeOff)) {
-                synth.startNote(freq, amp);
+
+//            auto modAmount = fmModMultiplier * Utils::clamp(absAsymmetry + .5f - asymmetryThresholdLow, 0.f, 1.f);
+            auto modAmount = Utils::clamp(absAsymmetry + .5f - asymmetryThresholdLow, 0.f, 1.f);
+
+
+            if (sonificationMode == SynthRhythmic) {
+                synth.setModulationAmount(modAmount > 0.f ? 2.f + fmModMultiplier * modAmount : 0);
+                // Check for new note
+                if (gaitEventDetector.hasEventNow(GaitEventDetectorComponent::GaitEventType::ToeOff)) {
+                    synth.startNote(freq, amp);
+                }
+                synth.setEnvelope({0.f, .05f, synthDecayTime});
             } else {
+                synth.setModulationAmount(fmModMultiplier * .5f * modAmount);
                 synth.setCarrierFrequency(freq);
             }
-
-//            auto modAmount = 2.f * Utils::clamp(absAsymmetry - .75f, 0.f, 100.f);
-            auto modAmount = fmMultiplier * Utils::clamp(absAsymmetry + .5f - asymmetryThresholdLow, 0.f, 1.f);
-            synth.setModulationAmount(modAmount > 0.f ? 2.f + modAmount : 0);
             break;
         }
         case SonificationMode::AudioFile:
-            auto filterOrder = static_cast<unsigned int>(floorf(666.f * Utils::clamp(absAsymmetry + .5f -
-                                                                                     asymmetryThresholdLow, 0.f,
-                                                                                     1.f)));
-//            auto filterGain = Utils::clamp(20.f * (absAsymmetry + .5f - asymmetryThresholdLow), 0.f, .5f);
-
-            allpass1.setOrder(filterOrder == 0 ? 0 : 10 + filterOrder);
-            allpass2.setOrder(filterOrder == 0 ? 0 : 17 + filterOrder);
-
-//            allpass1.setGain(1.f - filterGain);
-//            allpass2.setGain(1.f - (2.f * filterGain));
+            auto filterOrder = static_cast<unsigned int>(floorf(5000.f * Utils::clamp(absAsymmetry + .5f -
+                                                                                      asymmetryThresholdLow, 0.f,
+                                                                                      1.f)));
+            allpass1.setOrder(filterOrder == 0 ? 0 : filterOrder);
+            allpass2.setOrder(filterOrder == 0 ? 0 : 1 + ceilf(filterOrder * 1.1));
             break;
     }
 
-//    auto pan = asymmetryPct * .25f;
     auto pan = asymmetry * 30.f;
     panner.setPan(Utils::clamp(pan, -1.f, 1.f));
 
     auto reverbParams = reverb.getParameters();
-//    auto reverbAmount = Utils::clamp(absAsymmetry - 2.5f, 0.f, 100.f);
     auto reverbAmount = Utils::clamp(
             reverbAmountMultiplier * Utils::clamp(absAsymmetry + .5f - asymmetryThresholdHigh, 0.f, 1.f),
             0.f, 1.f
@@ -426,10 +503,7 @@ void MainComponent::updateSonification() {
 }
 
 void MainComponent::play() {
-    if (playButton.isEnabled()) {
-        if (!gaitEventDetector.prepareToProcess()) {
-            return;
-        }
+    if (playButton.isEnabled() && gaitEventDetector.prepareToProcess()) {
         auto imuTime = gaitEventDetector.getCurrentTime() * .001;
         video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
         switchPlayState(PlayState::Playing);
@@ -511,4 +585,31 @@ void MainComponent::selectAudioFile() {
                 }
             }
     );
+}
+
+void MainComponent::setSonificationMode() {
+    sonificationMode = static_cast<SonificationMode>(sonificationModeSelector.getSelectedId());
+
+    switch (sonificationMode) {
+        case SynthRhythmic:
+        case SynthConstant:
+            openAudioBrowserButton.setVisible(false);
+            openAudioBrowserButton.setEnabled(false);
+            carrierFreqSlider.setVisible(true);
+            modulationAmountSlider.setVisible(true);
+            decayTimeSlider.setVisible(sonificationMode == SynthRhythmic);
+            synth.enableEnvelope(sonificationMode == SynthRhythmic);
+            allpass1GainSlider.setVisible(false);
+            allpass2GainSlider.setVisible(false);
+            break;
+        case AudioFile:
+            openAudioBrowserButton.setVisible(true);
+            openAudioBrowserButton.setEnabled(true);
+            carrierFreqSlider.setVisible(false);
+            modulationAmountSlider.setVisible(false);
+            decayTimeSlider.setVisible(false);
+            allpass1GainSlider.setVisible(true);
+            allpass2GainSlider.setVisible(true);
+            break;
+    }
 }

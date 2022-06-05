@@ -149,11 +149,15 @@ public:
      * Set the amplitude envelope for the oscillator and its modulators.
      * Shouldn't be called until all modulators have been added.
      */
-    void setEnvelope(OADEnv::Parameters &);
+    void setEnvelope(OADEnv::Parameters &, bool forceUpdateModulators = false);
 
     void setFrequency(float newFreq);
 
     void setModulationAmount(float newModulationAmount);
+
+    void stopNote();
+
+    void enableEnvelope(bool shouldEnable);
 
 private:
     std::vector<FMOsc> modulators;
@@ -179,6 +183,7 @@ private:
 
     OADEnv envelope;
     bool envelopeIsSet{false};
+    bool envelopeEnabled{true};
 
     // A scaling factor applied to peak deviation and feedback.
     double modulationAmount{1.0};

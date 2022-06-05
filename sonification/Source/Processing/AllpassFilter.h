@@ -14,7 +14,7 @@
 
 class AllpassFilter {
 public:
-    AllpassFilter(unsigned int numChannelsToAllocate);
+    explicit AllpassFilter(unsigned int numChannelsToAllocate);
 
     void setGain(float newGain);
 
@@ -31,5 +31,5 @@ private:
     unsigned int maxOrder{0};
     // Use even numbered channels for feedforward buffers, odd numbered for feedback.
     juce::AudioBuffer<float> buffer;
-    unsigned int writeIndex{0};
+    std::vector<unsigned int> writeIndices;
 };

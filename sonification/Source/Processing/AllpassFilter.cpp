@@ -13,7 +13,8 @@
 
 AllpassFilter::AllpassFilter(unsigned int numChannelsToAllocate) :
         numChannels(numChannelsToAllocate),
-        buffer(static_cast<int>(numChannelsToAllocate * 2), 0) {
+        buffer(static_cast<int>(numChannelsToAllocate * 2), 0),
+        writeIndices(numChannelsToAllocate, 0) {
 }
 
 void AllpassFilter::setGain(float newGain) {
@@ -26,9 +27,22 @@ void AllpassFilter::setOrder(uint newOrder) {
         if (newOrder > maxOrder) {
             this->buffer.setSize(static_cast<int>(numChannels * 2), static_cast<int>(newOrder), true, true, true);
             maxOrder = newOrder;
-            this->writeIndex %= this->order; // maybe don't need this anymore...
+            // maybe don't need this anymore...
+            for (unsigned int channel = 0; channel < numChannels; ++channel) {
+                this->writeIndices[channel] %= this->order;
+            }
         }
     }
+
+//    if (newOrder != this->order) {
+//        this->order = newOrder;
+//        if (newOrder > 0) {
+//            this->buffer.setSize(static_cast<int>(numChannels * 2), static_cast<int>(newOrder), true, true, true);
+//            for (unsigned int channel = 0; channel < numChannels; ++channel) {
+//                this->writeIndices[channel] %= this->order;
+//            }
+//        }
+//    }
 }
 
 float AllpassFilter::processSample(int channel, float inputSample) {
@@ -36,21 +50,21 @@ float AllpassFilter::processSample(int channel, float inputSample) {
 
     if (this->order == 0) {
         outSample = inputSample;
-        this->writeIndex = 0;
+        this->writeIndices[channel] = 0;
     } else {
-        auto readIndex = static_cast<uint>(Utils::modulo(this->writeIndex - this->order, this->order));
+        auto readIndex = static_cast<uint>(Utils::modulo(this->writeIndices[channel] - this->order, this->order));
 
         // y[n] = gx[n] + x[n-N] - gy[n-N]
         outSample = this->gain * inputSample +
                     this->buffer.getSample(2 * channel, static_cast<int>(readIndex)) -
                     this->gain * this->buffer.getSample(2 * channel + 1, static_cast<int>(readIndex));
 
-        this->buffer.setSample(2 * channel, static_cast<int>(this->writeIndex), inputSample);
-        this->buffer.setSample(2 * channel + 1, static_cast<int>(this->writeIndex), outSample);
-        ++this->writeIndex;
+        this->buffer.setSample(2 * channel, static_cast<int>(this->writeIndices[channel]), inputSample);
+        this->buffer.setSample(2 * channel + 1, static_cast<int>(this->writeIndices[channel]), outSample);
+        ++this->writeIndices[channel];
         // This really oughtn't happen due to the condition above. Race condition, maybe.
         if (this->order > 0) {
-            this->writeIndex %= this->order;
+            this->writeIndices[channel] %= this->order;
         }
     }
 

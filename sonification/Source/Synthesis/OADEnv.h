@@ -60,6 +60,8 @@ public:
     */
     void setSampleRate(double newSampleRate) noexcept;
 
+    void noteOff();
+
 private:
     void recalculateRates() noexcept;
 

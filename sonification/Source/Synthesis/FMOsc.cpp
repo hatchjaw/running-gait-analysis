@@ -54,7 +54,7 @@ float FMOsc::computeNextSample() {
 
     currentAngle += angleDelta;
     prevSample = sample;
-    return this->envelope.getNextSample() * sample;
+    return (envelopeEnabled ? this->envelope.getNextSample() : 1.f) * sample;
 }
 
 void FMOsc::computeNextBlock(juce::AudioBuffer<float> &buffer, int startSample, int numSamples) {
@@ -84,24 +84,19 @@ void FMOsc::setupNote(double frequency, float noteAmplitude) {
 
     setFrequency(frequency);
 
-    envelope.noteOn();
-
-    for (auto &m: modulators) {
-        auto modFreq = m.modMode == PROPORTIONAL ? frequency * m.modulationFrequencyRatio : m.modulationFrequency;
-        // modulation index, I = d/m; d, peak deviation; m, modulation frequency;
-        auto modulationIndex = noteAmplitude * modulationAmount * (m.peakDeviation / modFreq);
-        m.setupNote(modFreq, static_cast<float>(modulationIndex));
+    if (envelopeEnabled) {
+        envelope.noteOn();
     }
 }
 
 bool FMOsc::isActive() {
-    return envelope.isActive();
+    return !envelopeEnabled || envelope.isActive();
 }
 
-void FMOsc::setEnvelope(OADEnv::Parameters &newParams) {
+void FMOsc::setEnvelope(OADEnv::Parameters &newParams, bool forceUpdateModulators) {
     envelope.setParameters(newParams);
     for (auto &modulator: modulators) {
-        if (!modulator.envelopeIsSet) {
+        if (!modulator.envelopeIsSet || forceUpdateModulators) {
             modulator.setEnvelope(newParams);
         }
     }
@@ -117,5 +112,26 @@ void FMOsc::setModulationAmount(float newModulationAmount) {
 void FMOsc::setFrequency(float newFreq) {
     auto cyclesPerSample = newFreq / sampleRate;
     angleDelta = cyclesPerSample * juce::MathConstants<double>::twoPi;
+
+    for (auto &m: modulators) {
+        auto modFreq = m.modMode == PROPORTIONAL ? newFreq * m.modulationFrequencyRatio : m.modulationFrequency;
+        // modulation index, I = d/m; d, peak deviation; m, modulation frequency;
+        auto modulationIndex = amplitude * modulationAmount * (m.peakDeviation / modFreq);
+        m.setupNote(modFreq, static_cast<float>(modulationIndex));
+    }
 }
 
+void FMOsc::stopNote() {
+    angleDelta = 0.f;
+    envelope.noteOff();
+    for (auto &m: modulators) {
+        m.stopNote();
+    }
+}
+
+void FMOsc::enableEnvelope(bool shouldEnable) {
+    envelopeEnabled = shouldEnable;
+    for (auto &m: modulators) {
+        m.enableEnvelope(shouldEnable);
+    }
+}

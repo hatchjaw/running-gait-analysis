@@ -51,6 +51,8 @@ public:
 
     void setEnvelope(OADEnv::Parameters envParams);
 
+    void enableEnvelope(bool shouldEnable);
+
 protected:
     FMOsc carrier;
 
