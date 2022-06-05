@@ -232,6 +232,7 @@ void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate
     allpass2.setGain(1.f - allpass2Gain);
 
     transportSource.prepareToPlay(samplesPerBlockExpected, sampleRate);
+    transportSource.setGain(.75f);
     transportSource.setLooping(true);
 }
 
@@ -595,6 +596,7 @@ void MainComponent::setSonificationMode() {
         case SynthConstant:
             openAudioBrowserButton.setVisible(false);
             openAudioBrowserButton.setEnabled(false);
+            selectedAudioFileLabel.setVisible(false);
             carrierFreqSlider.setVisible(true);
             modulationAmountSlider.setVisible(true);
             decayTimeSlider.setVisible(sonificationMode == SynthRhythmic);
@@ -605,6 +607,7 @@ void MainComponent::setSonificationMode() {
         case AudioFile:
             openAudioBrowserButton.setVisible(true);
             openAudioBrowserButton.setEnabled(true);
+            selectedAudioFileLabel.setVisible(true);
             carrierFreqSlider.setVisible(false);
             modulationAmountSlider.setVisible(false);
             decayTimeSlider.setVisible(false);
