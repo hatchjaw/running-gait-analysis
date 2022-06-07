@@ -376,7 +376,7 @@ void MainComponent::showOptions() {
 }
 
 void MainComponent::hiResTimerCallback() {
-    if (!video.isPlaying()) {
+    if (video.isVideoOpen() && !video.isPlaying()) {
         gaitEventDetector.stop();
         transportSource.stop();
     } else if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
@@ -384,6 +384,7 @@ void MainComponent::hiResTimerCallback() {
         gaitEventDetector.processNextSample();
 
         if (gaitEventDetector.isDoneProcessing()) {
+            const MessageManagerLock mmLock;
             switchPlayState(PlayState::Stopped);
             return;
         }
@@ -412,8 +413,11 @@ void MainComponent::switchPlayState(PlayState state) {
             stopButton.setEnabled(true);
             imuSampleTimeMs = 0.f;
             startTimer(TIMER_INCREMENT_MS);
-            video.setAudioVolume(0.25f);
-            video.play();
+            if (video.isVideoOpen()) {
+                video.setAudioVolume(0.25f);
+                video.play();
+            }
+
             if (sonificationMode == AudioFile) {
                 transportSource.start();
             } else if (sonificationMode == SynthConstant) {
@@ -506,7 +510,9 @@ void MainComponent::updateSonification() {
 void MainComponent::play() {
     if (playButton.isEnabled() && gaitEventDetector.prepareToProcess()) {
         auto imuTime = gaitEventDetector.getCurrentTime() * .001;
-        video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
+        if (video.isVideoOpen()) {
+            video.setPlayPosition(videoOffset + VIDEO_NUDGE + imuTime);
+        }
         switchPlayState(PlayState::Playing);
     }
 }
@@ -518,13 +524,21 @@ void MainComponent::stop() {
 void MainComponent::selectCaptureFile() {
     switchPlayState(PlayState::Stopped);
     fileChooser = std::make_unique<FileChooser>("Select a capture file",
-                                                File("~/src/matlab/smc/ei"),
+                                                File("~/Documents"),
                                                 "*.csv");
     fileChooser->launchAsync(
             FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
             [this](const FileChooser &chooser) {
                 auto csvFile = chooser.getResult();
                 if (csvFile.getFileName() != "" && csvFile.existsAsFile()) {
+                    selectedCaptureFileLabel.setText(csvFile.getFileName(),
+                                                     NotificationType::dontSendNotification);
+
+                    captureFile = csvFile;
+
+                    playbackSpeedSlider.setEnabled(true);
+                    switchPlayState(PlayState::Stopped);
+
                     // Try to load associated video.
                     auto videoFile = File{csvFile.getParentDirectory().getFullPathName() +
                                           "/../videos/" +
@@ -533,14 +547,6 @@ void MainComponent::selectCaptureFile() {
                     if (videoFile.existsAsFile()) {
                         video.load(videoFile);
                         video.setVisible(true);
-
-                        selectedCaptureFileLabel.setText(csvFile.getFileName(),
-                                                         NotificationType::dontSendNotification);
-
-                        captureFile = csvFile;
-
-                        playbackSpeedSlider.setEnabled(true);
-                        switchPlayState(PlayState::Stopped);
                     } else {
                         selectedCaptureFileLabel.setText("Loaded capture data, but failed to load video.",
                                                          NotificationType::dontSendNotification);

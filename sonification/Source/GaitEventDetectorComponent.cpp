@@ -155,22 +155,6 @@ bool GaitEventDetectorComponent::isToeOff() {
 }
 
 bool GaitEventDetectorComponent::isInitialContact(float currentAccelY) {
-//    // Check for basic initial contact criteria -- if no previous TOs or ICs
-//    // have been recorded, this could be the first IC.
-//    bool couldBeInitialContact = elapsedTimeMs > 50.f &&
-//                                 jerk.getCurrent() < IC_JERK_THRESH &&
-//                                 currentAccelY < IC_ACCEL_THRESH;
-//
-//    // If a toe-off or initial-contact has been registered, add the rest of the
-//    // conditions.
-//    if (lastToeOff.type == GaitEventType::ToeOff || lastInitialContact.type == GaitEventType::InitialContact) {
-//        couldBeInitialContact = couldBeInitialContact &&
-//                                gaitPhase == GaitPhase::SwingReversal &&
-//                                (elapsedTimeMs - IMU_SAMPLE_PERIOD_MS) - lastToeOff.timeStampMs > TO_IC_INTERVAL_MS;
-//    }
-//
-//    return couldBeInitialContact;
-
     // Detect initial contact. First high negative jerk event an arbitrary
     // interval after last toe off.
     return (elapsedTimeMs - IMU_SAMPLE_PERIOD_MS) - lastToeOff.timeStampMs > TO_IC_INTERVAL_MS &&
