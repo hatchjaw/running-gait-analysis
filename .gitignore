@@ -1,5 +1,5 @@
 /captures/*.emtx
-/videos
+/videos/*.mov
 *.m~
 
 ### C++ template

@@ -45,3 +45,6 @@ as per instructions
 ### N.B.
 The video files aren't held in this repository, but IMU data can be
 played back and sonified in the app without the accompanying video.
+
+If you *do* have the associated video files, these should be placed 
+in the `/videos` directory.
