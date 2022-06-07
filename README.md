@@ -15,7 +15,7 @@ it with video footage, and identifying gait events.
 to the JUCE framework, an app for playing back the data and
 sonifying it in real time. 
 
-###Building the sonification app
+### Building the sonification app
 Download JUCE, put it in a subdirectory called `JUCE`, comment this
 line in CMakeLists.txt:
 
