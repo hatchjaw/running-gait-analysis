@@ -19,8 +19,7 @@ project(GAIT_SONIFICATION VERSION 0.1.0)
 # target), you'll need to tell this project that it depends on the installed copy of JUCE. If you've
 # included JUCE directly in your source tree (perhaps as a submodule), you'll need to tell CMake to
 # include that subdirectory as part of the build.
-if (JUCE_LOADED)
-else ()
+if (NOT JUCE_LOADED)
     find_package(JUCE CONFIG REQUIRED)        # If you've installed JUCE to your system
     # or
     #add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory called JUCE

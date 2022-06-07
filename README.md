@@ -13,7 +13,34 @@ it with video footage, and identifying gait events.
 
 `/sonification` contains a port of the gait event detection system
 to the JUCE framework, an app for playing back the data and
-sonifying it in real time.
+sonifying it in real time. 
+
+###Building the sonification app
+Download JUCE, put it in a subdirectory called `JUCE`, comment this
+line in CMakeLists.txt:
+
+```cmake
+find_package(JUCE CONFIG REQUIRED) # If you've installed JUCE to your system
+```
+and uncomment this line:
+
+```cmake
+add_subdirectory(JUCE) # If you've put JUCE in a subdirectory called JUCE
+```
+
+then run
+
+```shell
+cmake -B cmake-build
+cmake --build cmake-build
+```
+
+or use your fave IDE.
+
+Alternatively, install JUCE to your system and use CMake flag 
+`-DCMAKE_PREFIX_PATH=/path/to/juce-install`
+as per instructions 
+[here](https://forum.juce.com/t/native-built-in-cmake-support-in-juce/38700/13).
 
 ### N.B.
 The video files aren't held in this repository, but IMU data can be
