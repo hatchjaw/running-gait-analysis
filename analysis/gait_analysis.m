@@ -47,8 +47,8 @@ gyroID = 'TrignoIMSensor%1$d_Gyro%1$d_%2$c_IM__deg_sec_';
 %% Video + accelY + gyroY
 close all;
 
-doVideo = true;
-doPlot = true;
+doVideo = false;
+doPlot = false;
 plotGyro = true;
 plotAccel = true;
 % Number of samples to plot around the current time.
@@ -66,7 +66,16 @@ stancePhaseReversalWindow = [-1.2, -.5];
 % % Threshold for 'ground truth' IC detection.
 % shankJerkThresh = 350;
 shankAccelThresh = 3;
-shankJerkThresh = 225;
+switch capture.name
+    case "Normal_15"
+        shankJerkThresh = 650;
+    case "Normal_12_5"
+        shankJerkThresh = 500;
+    case "Vertical_12_5"
+        shankJerkThresh = 500;
+    otherwise
+        shankJerkThresh = 225;
+end
 % Number of strides (pairs of steps) to use for GTC balance running average.
 strideLookback = 4;
 
@@ -77,7 +86,7 @@ Fs = imuSampleRate;
 % This will be at least [lookaround] samples at the sample rate, to prevent 
 % reading indices outside of the bounds of the IMU data vector.
 % Second parameter to max() can be used to set an arbitrary offset.
-imuStartTime = max(lookaround/Fs, 59);
+imuStartTime = max(lookaround/Fs, 0);
 
 imuDuration = imuSamplePeriod*length(imuSamples);
 
@@ -154,6 +163,42 @@ gtGCTs = zeros(1, 2);
 isStancePhaseReversal = false;
 isSwingPhaseReversal = false;
 lastLocalMinimum = 0;
+
+% Compute some effort descriptors
+blockSize = 1;
+shankLAccelX = T.(sprintf(accelID, 2, 'X'));
+shankLAccelY = T.(sprintf(accelID, 2, 'Y'));
+shankLAccelZ = T.(sprintf(accelID, 2, 'Z'));
+shankLAccelNorm = sqrt(shankLAccelX.^2 + shankLAccelY.^2 + shankLAccelZ.^2);
+shankRAccelX = T.(sprintf(accelID, 3, 'X'));
+shankRAccelY = T.(sprintf(accelID, 3, 'Y'));
+shankRAccelZ = T.(sprintf(accelID, 3, 'Z'));
+shankRAccelNorm = sqrt(shankRAccelX.^2 + shankRAccelY.^2 + shankRAccelZ.^2);
+% Time effort
+timeEffortL = zeros(1, 1);
+timeEffortR = zeros(1, 1);
+for n=1:floor(length(Timu)/blockSize)
+    start = (n-1)*blockSize+1;
+    timeEffortL(n) = (1/blockSize)*sum(shankLAccelNorm(start:start + blockSize));
+    timeEffortR(n) = (1/blockSize)*sum(shankRAccelNorm(start:start + blockSize));
+end
+
+shankLJerkX = (shankLAccelX(2:end) - shankLAccelX(1:end-1)) / imuSamplePeriod;
+shankLJerkY = (shankLAccelY(2:end) - shankLAccelY(1:end-1)) / imuSamplePeriod;
+shankLJerkZ = (shankLAccelZ(2:end) - shankLAccelZ(1:end-1)) / imuSamplePeriod;
+shankLJerkNorm = sqrt(shankLJerkX.^2 + shankLJerkY.^2 + shankLJerkZ.^2);
+shankRJerkX = (shankRAccelX(2:end) - shankRAccelX(1:end-1)) / imuSamplePeriod;
+shankRJerkY = (shankRAccelY(2:end) - shankRAccelY(1:end-1)) / imuSamplePeriod;
+shankRJerkZ = (shankRAccelZ(2:end) - shankRAccelZ(1:end-1)) / imuSamplePeriod;
+shankRJerkNorm = sqrt(shankRJerkX.^2 + shankRJerkY.^2 + shankRJerkZ.^2);
+% Flow effort
+flowEffortL = zeros(1, 1);
+flowEffortR = zeros(1, 1);
+for n=1:floor(length(Timu)/blockSize)
+    start = (n-1)*blockSize+1;
+    flowEffortL(n) = (1/blockSize)*sum(shankLJerkNorm(start:start + blockSize));
+    flowEffortR(n) = (1/blockSize)*sum(shankRJerkNorm(start:start + blockSize));
+end
 
 if doPlot || doVideo
     % Create a figure for the plot of the video, plus gyro & accelerometer Y axes.
@@ -370,6 +415,8 @@ for n=1:length(Timu)-imuNOffset-lookaround
 
             plot(tRange, .25*shankL),
             plot(tRange, .25*shankR),
+%             plot(tRange, .001*flowEffortL(Nimu(nRange)));
+%             plot(tRange, .001*flowEffortR(Nimu(nRange)));
 
             hold off, ...
                 grid on, ...
@@ -409,13 +456,16 @@ for n=1:length(Timu)-imuNOffset-lookaround
                 hold off, ...
                 grid on, ...
                 title(sprintf("Gyro Y t=%f s", currentT)), ...
-                ylim([-gyroLim, gyroLim]), xlim([tRange(1), tRange(end)]);
+                ylim([-gyroLim, gyroLim]), xlim([tRange(1), tRange(end)]), ...
+                yticks([-100, 0, 100]), ...
+                xlabel('Time (s)');
         end
         
         drawnow;
     end
 end
 
+% Bland-Altman plot of difference between trunk ICs and shank ICs.
 scatterRange = 4:length(ICs)-20;
 icDeltas = gtICs(scatterRange, 1) - ICs(scatterRange, 1);
 meanDelta = mean(icDeltas);
@@ -431,7 +481,14 @@ yline(meanDelta + stdDev, 'b');
 yline(meanDelta - stdDev, 'b');
 hold off;
 
-% paramci()
+figure();
+tvec = linspace(0, Timu(end), length(timeEffortL))';
+plot(tvec, timeEffortL), title('Time effort'), ylim([0, 30]), xlabel('Time (s)'), ...
+    hold on, plot(tvec, timeEffortR);
+figure();
+plot(tvec, flowEffortL), title('Flow effort'), ylim([0, 5e3]), xlabel('Time (s)'), ...
+    hold on, plot(tvec, flowEffortR);
+
 
 %% Animated plots of IMU data
 
