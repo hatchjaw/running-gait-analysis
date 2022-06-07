@@ -16,5 +16,5 @@ to the JUCE framework, an app for playing back the data and
 sonifying it in real time.
 
 ### N.B.
-The video files aren't held in this repository. IMU data can be
-played back and sonified in the app with the accompanying video.
+The video files aren't held in this repository, but IMU data can be
+played back and sonified in the app without the accompanying video.
