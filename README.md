@@ -12,11 +12,11 @@ format.
 it with video footage, and identifying gait events.
 
 `/sonification` contains a port of the gait event detection system
-to the JUCE framework, an app for playing back the data and
+to the JUCE framework, as an app for playing back the data and
 sonifying it in real time. 
 
 ### Building the sonification app
-Download JUCE, put it in a subdirectory called `JUCE`, comment this
+Download JUCE, put it in subdirectory `/sonification/JUCE`, comment this
 line in CMakeLists.txt:
 
 ```cmake
@@ -28,9 +28,10 @@ and uncomment this line:
 add_subdirectory(JUCE) # If you've put JUCE in a subdirectory called JUCE
 ```
 
-then run
+then run:
 
 ```shell
+cd sonification
 cmake -B cmake-build
 cmake --build cmake-build
 ```

@@ -113,10 +113,10 @@ target_link_libraries(GaitSonification
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
-#if (CMAKE_BUILD_TYPE EQUAL "DEBUG")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     # Sign targets to allow debugging without elevated privileges
     add_custom_command(TARGET GaitSonification
             POST_BUILD
             COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/scripts/add_debug_entitlement.sh
             ${PROJECT_BINARY_DIR}/GaitSonification_artefacts/${CMAKE_BUILD_TYPE}/GaitSonification.app)
-#endif ()
+endif ()
