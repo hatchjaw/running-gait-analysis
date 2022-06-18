@@ -16,7 +16,7 @@ to the JUCE framework, as an app for playing back the data and
 sonifying it in real time. 
 
 ### Building the sonification app
-Download JUCE, put it in subdirectory `/sonification/JUCE`, comment this
+Download [JUCE](https://github.com/juce-framework/JUCE), put it in subdirectory `/sonification/JUCE`, comment this
 line in CMakeLists.txt:
 
 ```cmake
@@ -36,10 +36,10 @@ cmake -B cmake-build
 cmake --build cmake-build
 ```
 
-or use your fave IDE.
+or use your favourite IDE.
 
 Alternatively, install JUCE to your system and use CMake flag 
-`-DCMAKE_PREFIX_PATH=/path/to/juce-install`
+`-DCMAKE_PREFIX_PATH=/path/to/juce-install`,
 as per instructions 
 [here](https://forum.juce.com/t/native-built-in-cmake-support-in-juce/38700/13).
 
