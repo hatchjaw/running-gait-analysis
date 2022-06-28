@@ -37,3 +37,6 @@
 *.app
 
 /**/cmake-build*
+
+profile.trace
+*.zip

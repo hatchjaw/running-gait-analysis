@@ -16,7 +16,7 @@ captures = struct( ...
 );
 
 % Select a capture to work with.
-capture = captures.Vertical_12_5;
+capture = captures.Normal_15;
 
 % Sensor to use
 % 1: trunk front
@@ -48,7 +48,7 @@ gyroID = 'TrignoIMSensor%1$d_Gyro%1$d_%2$c_IM__deg_sec_';
 close all;
 
 doVideo = false;
-doPlot = false;
+doPlot = true;
 plotGyro = true;
 plotAccel = true;
 % Number of samples to plot around the current time.
@@ -119,12 +119,20 @@ shankLAccelX = T.(sprintf(accelID, 2, 'X'));
 shankRAccelX = T.(sprintf(accelID, 3, 'X'));
 
 % Gyroscope Y filter, for L/R detection.
-filtPass = 2.5/(imuSampleRate/2);
-filtStop = 50/(imuSampleRate/2);
-filtAttenuation = 60;
-[filtOrder, filtCutoff] = buttord(filtPass, filtStop, 3, filtAttenuation);
-[filtB, filtA] = butter(filtOrder, filtCutoff);
-gyroYFiltered = filter(filtB, filtA, gyroY);
+gyfp = 2.5/(imuSampleRate/2);
+gyfs = 50/(imuSampleRate/2);
+gyfatt = 60;
+[gyfo, gyfc] = buttord(gyfp, gyfs, 3, gyfatt);
+[gyfb, gyfa] = butter(gyfo, gyfc);
+gyroYFiltered = filter(gyfb, gyfa, gyroY);
+
+% Similar for accelX, per Lee et al.
+axfp = 2.5/(imuSampleRate/2);
+axfs = 50/(imuSampleRate/2);
+axfatt = 60;
+[axfo, axfc] = buttord(axfp, axfs, 3, axfatt);
+[axfb, axfa] = butter(axfo, axfc);
+aXf = filter(axfb, axfa, accelX);
 
 % Y limits for plots
 gyroLim = 250;
@@ -355,20 +363,20 @@ for n=1:length(Timu)-imuNOffset-lookaround
                 Timu(imuCurrentN) - TOs(end, 1) > TOICInterval
             % Left IC
             gtICs(end+1, :) = [...
-                Timu(imuCurrentN); ...
-                .25*shankLAccelX(Nimu(imuCurrentN)); ...
+                Timu(imuCurrentN - 1); ...
+                .25*shankLAccelX(Nimu(imuCurrentN - 1)); ...
                 1; ...
-                Timu(imuCurrentN) - gtICs(end, 1) ...
+                Timu(imuCurrentN - 1) - gtICs(end, 1) ...
             ];
         elseif prevFoot ~= -1 && ...
                 shankRJerk < -shankJerkThresh && ...
                 Timu(imuCurrentN) - TOs(end, 1) > TOICInterval
             % Right IC
             gtICs(end+1, :) = [...
-                Timu(imuCurrentN); ...
-                .25*shankRAccelX(Nimu(imuCurrentN)); ...
+                Timu(imuCurrentN - 1); ...
+                .25*shankRAccelX(Nimu(imuCurrentN - 1)); ...
                 -1; ...
-                Timu(imuCurrentN) - gtICs(end, 1) ...
+                Timu(imuCurrentN - 1) - gtICs(end, 1) ...
             ];
         end
     end
@@ -415,6 +423,8 @@ for n=1:length(Timu)-imuNOffset-lookaround
 
             plot(tRange, .25*shankL),
             plot(tRange, .25*shankR),
+%             plot(tRange, 5*aXf(Nimu(nRange)), 'LineWidth', 3),
+%             plot(tRange, accelZ(Nimu(nRange)), 'LineWidth', 2),
 %             plot(tRange, .001*flowEffortL(Nimu(nRange)));
 %             plot(tRange, .001*flowEffortR(Nimu(nRange)));
 
@@ -470,6 +480,8 @@ scatterRange = 4:length(ICs)-20;
 icDeltas = gtICs(scatterRange, 1) - ICs(scatterRange, 1);
 meanDelta = mean(icDeltas);
 stdDev = std(icDeltas);
+pd = fitdist(icDeltas, 'Normal');
+ci = paramci(pd);
 figure();
 scatter(gtICs(scatterRange, 1), icDeltas), ...
     title('Bland-Altman'), ...
@@ -488,6 +500,21 @@ plot(tvec, timeEffortL), title('Time effort'), ylim([0, 30]), xlabel('Time (s)')
 figure();
 plot(tvec, flowEffortL), title('Flow effort'), ylim([0, 5e3]), xlabel('Time (s)'), ...
     hold on, plot(tvec, flowEffortR);
+
+plot(tvec, aXf(~isnan(aXf)));
+hold on, yline(0), hold off;
+
+plot(tvec, gyroYFiltered(~isnan(gyroYFiltered)));
+hold on, yline(0), hold off;
+
+azfp = 5/(imuSampleRate/2);
+azfs = 50/(imuSampleRate/2);
+azfatt = 60;
+[azfo, azfc] = buttord(azfp, azfs, 3, azfatt);
+[azfb, azfa] = butter(azfo, azfc);
+aZf = filter(azfb, azfa, accelZ);
+plot(tvec, aZf(~isnan(aZf)));
+hold on, yline(0), hold off;
 
 
 %% Animated plots of IMU data
