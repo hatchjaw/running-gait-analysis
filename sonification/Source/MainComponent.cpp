@@ -97,7 +97,7 @@ MainComponent::MainComponent() :
     asymmetryThresholdsSlider.onValueChange = [this] {
         asymmetryThresholdLow = asymmetryThresholdsSlider.getMinValue() * .01f;
         asymmetryThresholdHigh = asymmetryThresholdsSlider.getMaxValue() * .01f;
-        gaitEventDetector.repaint();
+//        gaitEventDetector.repaint();
     };
     asymmetryThresholdsSlider.setSliderStyle(juce::Slider::TwoValueHorizontal);
     asymmetryThresholdsSlider.setNormalisableRange({50.f, 55.f, .1f});
@@ -174,7 +174,7 @@ MainComponent::MainComponent() :
 
 
     //==========================================================================
-    addChildComponent(video);
+//    addChildComponent(video);
 
     addAndMakeVisible(gaitEventDetector);
 
@@ -376,10 +376,11 @@ void MainComponent::showOptions() {
 }
 
 void MainComponent::hiResTimerCallback() {
-    if (video.isVideoOpen() && !video.isPlaying()) {
-        gaitEventDetector.stop();
-        transportSource.stop();
-    } else if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
+//    if (video.isVideoOpen() && !video.isPlaying()) {
+//        gaitEventDetector.stop();
+//        transportSource.stop();
+//    } else
+    if (imuSampleTimeMs >= GaitEventDetectorComponent::IMU_SAMPLE_PERIOD_MS) {
         // Check for gait events...
         gaitEventDetector.processNextSample();
 
@@ -390,13 +391,13 @@ void MainComponent::hiResTimerCallback() {
         }
 
         // Try to keep the video in sync.
-        if (gaitEventDetector.getElapsedSamples() % 10 == 0) {
-            const MessageManagerLock mmLock;
-            repaint();
-            if (gaitEventDetector.getElapsedSamples() % 2500 == 0) {
-                syncVideoToIMU();
-            }
-        }
+//        if (gaitEventDetector.getElapsedSamples() % 10 == 0) {
+//            const MessageManagerLock mmLock;
+//            repaint();
+//            if (gaitEventDetector.getElapsedSamples() % 2500 == 0) {
+//                syncVideoToIMU();
+//            }
+//        }
 
         updateSonification();
 
@@ -413,10 +414,10 @@ void MainComponent::switchPlayState(PlayState state) {
             stopButton.setEnabled(true);
             imuSampleTimeMs = 0.f;
             startTimer(TIMER_INCREMENT_MS);
-            if (video.isVideoOpen()) {
-                video.setAudioVolume(0.25f);
-                video.play();
-            }
+//            if (video.isVideoOpen()) {
+//                video.setAudioVolume(0.25f);
+//                video.play();
+//            }
 
             if (sonificationMode == AudioFile) {
                 transportSource.start();
@@ -462,7 +463,7 @@ void MainComponent::updateSonification() {
         case SonificationMode::SynthConstant:
         case SonificationMode::SynthRhythmic: {
             auto freqRange = carrierFrequencyRange.second - carrierFrequencyRange.first;
-            // Imagine cadence is limited to 100-300 bpm, so a range of 200.
+            // Conjecture that cadence is limited to 100-300 bpm, so a range of 200.
             auto freq = carrierFrequencyRange.first +
                         freqRange * (Utils::clamp(gaitEventDetector.getCadence(), 100.f, 300.f) - 100.f) * .005f;
 //            auto freq = carrierFrequencyRange.first * powf(2.f, gaitEventDetector.getCadence() * .01f);

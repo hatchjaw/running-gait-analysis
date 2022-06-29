@@ -24,6 +24,10 @@ public:
 
     std::vector<T> getSamples(unsigned int samplesToGet = 1);
 
+    void setReadIndex(unsigned int readPosition);
+
+    void incrementReadIndex();
+
 private:
     unsigned int length{0};
     std::vector<T> buffer;

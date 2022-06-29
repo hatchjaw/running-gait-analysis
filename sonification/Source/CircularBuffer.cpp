@@ -43,15 +43,6 @@ T CircularBuffer<T>::getPrevious(unsigned int delay) {
 
 template<typename T>
 std::vector<T> CircularBuffer<T>::getCircle() {
-//    std::vector<T> out(length);
-//    auto readIndex = writeIndex + 1;
-//    for (unsigned int i = 0; i < length; ++i) {
-//        if (readIndex >= length) {
-//            readIndex = 0;
-//        }
-//        out[i] = buffer[readIndex];
-//        ++readIndex;
-//    }
     return getSamples(length);
 }
 
@@ -73,6 +64,19 @@ std::vector<T> CircularBuffer<T>::getSamples(unsigned int samplesToGet) {
         --readIndex;
     }
     return out;
+}
+
+template<typename T>
+void CircularBuffer<T>::setReadIndex(unsigned int readPosition) {
+    writeIndex = readPosition;
+}
+
+template<typename T>
+void CircularBuffer<T>::incrementReadIndex() {
+    ++writeIndex;
+    if (writeIndex >= length) {
+        writeIndex = 0;
+    }
 }
 
 template

@@ -11,7 +11,7 @@ GaitEventDetectorComponent::GaitEventDetectorComponent(
         float &extremeAsymmetryThreshold
 ) :
         captureFile(file),
-        imuData(500, {0.f, 0.f}),
+        imuData(50000, {0.f, 0.f}),
         jerk(3, 0.f),
         gaitEvents(50, {GaitEventType::Unknown, Foot::Unknown, 0.f, 0, 0.f, 0.f}),
         groundContacts(50, {{
@@ -36,18 +36,28 @@ bool GaitEventDetectorComponent::prepareToProcess() {
     }
 
     reset();
+
+    numIMUSamples = 0;
+    imuData.setReadIndex(0);
+    // Read all the IMU data into a vector upfront.
+    while (!fileStream->isExhausted() && parseImuLine()) {
+        ++numIMUSamples;
+    }
+
+    imuData.setReadIndex(0);
+
     startTimerHz(30);
 
     return true;
 }
 
 void GaitEventDetectorComponent::processNextSample() {
-    parseImuLine();
-
-    if (doneProcessing) {
+    if (elapsedSamples == numIMUSamples) {
         stopTimer();
         return;
     }
+
+    imuData.incrementReadIndex();
 
     ++elapsedSamples;
     elapsedTimeMs += IMU_SAMPLE_PERIOD_MS;
@@ -164,13 +174,7 @@ bool GaitEventDetectorComponent::isInitialContact(float currentAccelY) {
 }
 
 
-void GaitEventDetectorComponent::parseImuLine() {
-    // Detect end of data.
-    if (fileStream->isExhausted()) {
-        doneProcessing = true;
-        return;
-    }
-
+bool GaitEventDetectorComponent::parseImuLine() {
     auto line = fileStream->readNextLine();
     juce::StringArray fields;
 
@@ -180,12 +184,13 @@ void GaitEventDetectorComponent::parseImuLine() {
     } while (line != "");
 
     if (fields[TRUNK_ACCEL_Y_INDEX] == "") {
-        doneProcessing = true;
-        return;
+        return false;
     }
 
     imuData.write({std::stof(fields[TRUNK_ACCEL_Y_INDEX].toStdString()),
                    std::stof(fields[TRUNK_GYRO_Y_INDEX].toStdString())});
+
+    return true;
 }
 
 bool GaitEventDetectorComponent::isDoneProcessing() const {
@@ -213,12 +218,12 @@ void GaitEventDetectorComponent::paint(Graphics &g) {
     g.setColour(juce::Colours::grey);
     g.drawRect(getLocalBounds(), 1);   // draw an outline around the component
 
-    plotAccelerometerData(g);
-
-    // List ground contact times
-    displayGctList(g);
-    // Draw GCT balance
-    displayGctBalance(g);
+//    plotAccelerometerData(g);
+//
+//    // List ground contact times
+//    displayGctList(g);
+//    // Draw GCT balance
+//    displayGctBalance(g);
 }
 
 void GaitEventDetectorComponent::plotAccelerometerData(Graphics &g) {
@@ -426,7 +431,7 @@ void GaitEventDetectorComponent::displayGctBalance(Graphics &g) {
     g.drawText("55% R", indicatorRight - 20, indicatorVcentre - 40, 40, 10, juce::Justification::centredTop);
 
     // Draw a marker to represent the GCT balance
-    auto balance = gctBalance.getNext();
+    auto balance = gctBalance.getCurrent();
     auto absBalance = fabsf(balance - .5f) + .5f;
     auto colour = juce::Colours::lightgrey;
     if (balance > asymmetryThresholdLow) {
@@ -456,7 +461,7 @@ void GaitEventDetectorComponent::displayGctBalance(Graphics &g) {
     g.setFont(14.f);
     if (isTimerRunning()) {
         g.drawText(
-                "Cadence: " + juce::String{cadence.getNext(), 2} + " steps/min",
+                "Cadence: " + juce::String{cadence.getCurrent(), 2} + " steps/min",
                 indicatorRight - 200, 10, 200, 20,
                 juce::Justification::centredRight);
     }
@@ -468,7 +473,11 @@ void GaitEventDetectorComponent::timerCallback() {
     currentGroundContactInfo = getGroundContactInfo();
     gctBalance.set(currentGroundContactInfo.balance);
     cadence.set(calculateCadence());
-    this->repaint();
+
+    gctBalance.getNext();
+    cadence.getNext();
+
+//    this->repaint();
 }
 
 void GaitEventDetectorComponent::stop(bool andReset) {

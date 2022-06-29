@@ -129,7 +129,7 @@ private:
     const juce::Colour LEFT_COLOUR{juce::Colours::skyblue};
     const juce::Colour RIGHT_COLOUR{juce::Colours::palegoldenrod};
 
-    void parseImuLine();
+    bool parseImuLine();
 
     static bool isInflection(std::vector<float> v, InflectionType type);
 
@@ -159,6 +159,7 @@ private:
     unsigned int elapsedSamples{0};
 
     CircularBuffer<ImuSample> imuData;
+    unsigned int numIMUSamples{0};
     CircularBuffer<float> jerk;
 
     unsigned int strideLookback{4};
